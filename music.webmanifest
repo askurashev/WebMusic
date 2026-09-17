@@ -1,0 +1,17 @@
+{
+	"name": "Music",
+	"description": "Music Folder Player by ltGuillaume",
+	"short_name": "Music",
+	"start_url": "/",
+	"scope": "/",
+	"display": "standalone",
+	"background_color": "#1a1a1a",
+	"theme_color": "#10100f",
+	"icons": [
+		{
+			"src": "music.png",
+			"type": "image/png",
+			"sizes": "512x512"
+		}
+	]
+}

@@ -1,0 +1,170 @@
+/* Loosely based on mov.im, orange focus */
+:root.blue {
+	--bg: #0e1317;
+	--bg-body: #141a21;
+	--bg-button-hv: #192028;
+	--bg-menu: #141a21;
+	--bg-popup: #11171c;
+	--bg-splash: #30353c;
+	--bg-trash: #0e1317aa;
+	--border: #171f26;
+	--border-cover: #212b36;
+	--focus: #eb6600;
+	--focus-dim: #b35000;
+	--scroll: #30353c;
+	--scroll-hv: #3f434a;
+}
+
+/* Blue + hue rotation -60, orange focus */
+:root.green {
+	--bg: #0e1713;
+	--bg-body: #14221a;
+	--bg-button-hv: #1a2922;
+	--bg-menu: #131f19;
+	--bg-popup: #111c17;
+	--bg-splash: #313d38;
+	--bg-trash: #0e1713aa;
+	--border: #17261e;
+	--border-cover: #21362b;
+	--focus: #eb6600;
+	--focus-dim: #b35000;
+	--scroll: #313d38;
+	--scroll-hv: #59665d;
+}
+
+/* Loosely based on XDA emails */
+:root.gray {
+	--bg: #2d3036;
+	--bg-body: #23272c;
+	--bg-button-hv: #474c54;
+	--bg-dim: var(--bg-body);
+	--bg-image: none;
+	--bg-menu: #393d43;
+	--bg-popup: #393d43;
+	--bg-trash: #2d3036aa;
+	--border: #474c54;
+	--box-shadow: #23272c;
+	--scroll: #474c54;
+	--scroll-hv: #5a5f68;
+}
+
+html.gray #cover:not(.nofade):not(:hover) { opacity: .8 }
+
+/* Light theme */
+:root.light {
+	--bg: #f6f8fa;
+	--bg-body: #eaeef2;
+	--bg-button-hv: #e9f1f7;
+	--bg-dim: var(--bg-body);
+	--bg-image: url(music.theme.light.svg);
+	--bg-menu: #f2f6fa;
+	--bg-popup: #f2f6fa;
+	--bg-splash: #d0d7de;
+	--bg-toast-error: #911d1d;
+	--bg-trash: #f6f8faaa;
+	--border: #d0d7de;
+	--border-cover: #fafafa;
+	--box-shadow: #eaeef2;
+	--focus: #ef6c00;
+	--focus-dim: #f3934d;
+	--scroll: #d0d7de;
+	--scroll-hv: #ccc;
+	--text: #444;
+	--text-dim: #999;
+	--text-li-parent: #ccc;
+	--text-locked: #aaa;
+}
+
+html.light #toast.error { color: #fff }
+html.light #cover { opacity: 1 }
+
+/* Focus colors, use in music.ini as themes = ['blue focusgreen', ...] */
+:root.focusblue {
+	--focus: #1d91f0;
+	--focus-dim: #1a6eac;
+}
+
+:root.focusgreen {
+	--focus: #00bd35;
+	--focus-dim: #00800f;
+}
+
+:root.focusorange {
+	--focus: #eb6600;
+	--focus-dim: #b35000;
+}
+
+:root.focuspink {
+	--focus: #e0006f;
+	--focus-dim: #b30050;
+}
+
+/* Optional styling via classnames */
+
+/* round: Rounded buttons and panels */
+:root.round { --radius: 8px }
+html.round button { border-radius: 2em }
+
+/* colorborder: Add decorative top border to main elements */
+html.colorborder body > div, html.colorborder #popup { border-top: 2px solid var(--focus-dim) }
+	html.colorborder.material body > div, html.colorborder.material #popup, html.colorborder.touch #popup { border-top: 3px solid var(--focus-dim) }
+html.colorborder body > div { border-radius: 12px }
+
+/* colorborder: Add decorative bottom border to hovered buttons */
+html.colorborder:not(.colorbutton) :not(.menu) > button:hover, html.colorborder:not(.colorbutton) .menu > button:focus { border-bottom-color: var(--focus-dim) !important }
+	html.colorborder.colortoggle button.on:hover {  border-bottom-color: var(--focus) !important }
+
+/* colorbutton: Colorize hovered buttons */
+:root.colorbutton { --bg-button-hv: var(--focus-dim) }
+
+html.colorbutton button, html.colorbutton button b { transition: background .2s, color .2s ease-out, text-decoration .1s, border .2s }
+	html.colorbutton button:focus b, html.colorbutton button:hover b {
+		color: #ddd;
+		border-color: var(--focus);
+	}
+	html.colorbutton div:not(.menu) > button:hover u, html.colorbutton .menu > button:focus u { text-decoration-color: transparent }
+	html.colorbutton button:hover, html.colorbutton .menu button:focus { color: #fff }
+		html.colorbutton.light .menu > button:hover:not(:focus) { color: #000 }
+
+/* colortoggle: Indicate enabled options by colored borders instead of checkmarks */
+html.colortoggle button[onclick^=toggle]:not(#volume), html.colortoggle div[onclick^=toggle] button, html.colortoggle #toast {
+	height: calc(var(--button-size) - 2px);
+	padding: 0 calc(1.25 * var(--space) - 2px);
+	margin: 1px;
+}
+	html.colortoggle button[onclick^=toggle]:empty { width: calc(var(--button-size) - 2px) }
+	html.colortoggle button[onclick^=toggle].on, html.colortoggle div[onclick^=toggle] button.on, html.colortoggle #toast.on { border-color: var(--focus-dim) }
+		html.colortoggle button[onclick^=toggle].on:hover, html.colortoggle div[onclick^=toggle] button.on:hover { border-color: var(--focus) }
+	html.colortoggle div[onclick^=toggle].menu button { margin: 0 }
+		html.colortoggle:not(.colorbutton) div[onclick^=toggle].menu button { margin: 1px 0 }
+
+/* material: Material Design 3(ish) rounded corners, use in music.ini as themes = ['material blue', ...] */
+:root.material {
+	--radius: calc(2em + 2px);
+	--button-size: 2.75em;
+	--space: .75em;
+}
+
+html.material ::-webkit-scrollbar-thumb { border-radius: 4px }
+html.material body { font-size: 1.1em }
+html.material input[type=range] { height: 13px }
+html.material li { padding: .1em 0 }
+html.material #cover {
+	min-width: 7.5em;
+	min-height: 7.5em;
+	border-radius: calc(.5 * var(--radius));
+}
+html.material .menu { padding: .5em }
+	html.material body > div, html.material .menu button { border-radius: var(--radius) }
+html.material #playlist:not(.resize) { max-height: 11em }
+
+/* Display songs in tree horizontally
+#tree li.song {
+	display: inline-block;
+	margin-right: 2.5em;
+}
+*/
+
+/* Set a fixed height for the playlist
+#playlist { height: 11em !important }
+*/

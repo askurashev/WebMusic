@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html id="doc">
+<head>
+	<meta charset="UTF-8"/>
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<link rel="manifest"   href="music.webmanifest" crossorigin="use-credentials">
+	<link rel="stylesheet" href="music.css"       type="text/css">
+	<link rel="stylesheet" href="music.theme.css" type="text/css">
+	<link rel="icon"       href="music.png"       type="image/png">
+	<script src="music.js"></script>
+	<title id="pagetitle">♫</title>
+</head>
+<body id="body" class="hide" onload="init()">
+	<span id="splash"></span>
+	<div id="player" class="toolbar">
+		<img id="cover" src="music.png" onclick="zoom()" accesskey="z"
+			oncontextmenu="toggle(event)" onload="this.style.opacity = ''" />
+		<div id="current">
+			<div id="album" class="title dim" onclick="setFilter(event)"></div>
+			<div id="title" class="title dim" onclick="setFilter(event)"></div>
+			<div id="time">00:00</div>
+			<input id="seek" type="range" min="0" max="1" value="0" step="any"
+				onchange="seek('c')" oninput="seek('i')" ontouchstart="onseek=true" ontouchend="onseek=false" disabled>
+			<div id="controls" class="toolbar">
+				<button id="volume"       onclick="toggle(event)" accesskey="u" oncontextmenu="mute(event)" contextkey="m"></button>
+				<input  id="volumeslider" type="range" min="0" step=".05" onchange="setVolume(event)" oninput="setVolume(event)">
+				<button id="stop"         onclick="stop()"></button>
+				<button id="playpause"    onclick="playPause()"   accesskey=" "></button>
+				<button id="previous"     onclick="previous()"    accesskey="[" oncontextmenu="skipArtist(event)" contextkey="K"></button>
+				<button id="next"         onclick="next()"        accesskey="]" oncontextmenu="skipArtist(event)" contextkey="k"></button>
+			</div>
+		</div>
+		<button id="toast" class="hide"></button>
+	</div>
+	<div id="options">
+		<div class="wrapped toolbar" onclick="toggle(event)">
+			<button id="enqueue"     accesskey="e" oncontextmenu="getRandom(event)" contextkey="q"></button>
+			<button id="crossfade"   accesskey="o"></button>
+			<button id="random"      accesskey="r" oncontextmenu="shuffle(event)"  contextkey="h"></button>
+			<button id="playlistbtn" accesskey="p"></button>
+			<button id="share"       accesskey="s"></button>
+			<button id="lock"        accesskey="l"></button>
+			<button id="logbtn"      accesskey="g"></button>
+		</div>
+		<div id="playlistoptions" class="wrapped toolbar">
+			<div id="playlistsdiv">
+				<button id="playlistload" onclick="menu(event)" accesskey="d"></button>
+				<div id="playlists" class="menu hide" onclick="loadPlaylistBtn(event)"
+					oncontextmenu="removePlaylist(event)" onmouseleave="menu(event)">
+				</div>
+			</div>
+				<button id="playlistsave"   onclick="prepPlaylists('save')" accesskey="v"></button>
+				<button id="playlistimport" onclick="importPlaylist()"      accesskey="i"></button>
+				<button id="playlistexport" onclick="exportPlaylist()"      accesskey="x"></button>
+				<div id="afterdiv">
+				<button id="after" onclick="menu(event)" accesskey="a"></button>
+				<div id="afteroptions" class="menu hide" onmouseleave="menu(event)" onclick="toggle(event)">
+					<button id="stopplayback"   accesskey="s"></button>
+					<button id="repeatplaylist" accesskey="p"></button>
+					<button id="playlibrary"    accesskey="c"></button>
+					<button id="randomlibrary"  accesskey="r"></button>
+					<button id="randomfiltered" accesskey="f"></button>
+				</div>
+			</div>
+		</div>
+		<div id="shares">
+			<div id="sharefolder" class="folder sharediv toolbar">
+				<input  id="folderuri"      class="uri"      onclick="this.select()" readonly>
+				<button id="folderdownload" class="download" onclick="download('folder')"></button>
+				<button id="folderclip"     class="link"     onclick="clip('folder')"></button>
+				<button id="foldershare"    class="share"    onclick="Popup.share('folder')"></button>
+			</div>
+			<div id="sharesong" class="song sharediv toolbar">
+				<input  id="songuri"      class="uri"      onclick="this.select()" readonly>
+				<button id="songdownload" class="download" onclick="download('song')"></button>
+				<button id="songclip"     class="link"     onclick="clip('song')"></button>
+				<button id="songshare"    class="share"    onclick="Popup.share('song')"></button>
+			</div>
+			<div id="shareplaylist" class="playlist sharediv toolbar">
+				<select id="playlisturi"      class="uri"></select>
+				<button id="playlistdownload" class="download" onclick="download('playlist')"></button>
+				<button id="playlistclip"     class="link"     onclick="clip('playlist')"></button>
+				<button id="playlistshare"    class="share"    onclick="Popup.share('playlist')"></button>
+			</div>
+			<a id="a" class="hide" href="#" rel="noreferrer" target="_blank" download></a>
+		</div>
+	</div>
+	<div id="playlistdiv" onmouseup="resizePlaylist()">
+		<div>
+			<div id="trash" class="hidden toolbar" onclick="toggle(event)"
+					ondragover="allowDrop(event)" ondrop="removeItem(event); cls(this, 'drop', REM)"
+					ondragenter="cls(this, 'drop', ADD)" ondragleave="cls(this, 'drop', REM)">
+				<button id="playlistclear" class="clear" accesskey="c"></button>
+				<button id="removesongs"></button>
+			</div>
+			<ul id="playlist" onclick="clickItem(event)" oncontextmenu="findItem(event)"
+				ondragstart="prepDrag(event)" ondragover="allowDrop(event)" ondragend="endDrag()" ondrop="dropItem(event)"
+				ondragenter="cls(event.target, 'over', ADD)" ondragleave="cls(event.target, 'over', REM)"
+				onmouseenter="onplaylist=true" onmouseleave="onplaylist=false"></ul>
+		</div>
+	</div>
+	<div id="library">
+		<div class="toolbar">
+			<input  id="filter" onchange="filter()" onclick="setFocus(this)" accesskey="f" onfocus="this.select()">
+			<button id="filterbtn"   class="filter" onclick="filter()"></button>
+			<button id="filterclear" class="clear"  onclick="clearFilter()"></button>
+			<div class="spacer"></div>
+			<div class="hidden toolbar">
+				<button id="reload" onclick="reloadLibrary()" accesskey="F5"></button>
+				<button id="unfold" onclick="toggle(event)"   accesskey="t" ></button>
+			</div>
+		</div>
+		<ul id="tree" onclick="treeClick(event)" oncontextmenu="treeClick(event, true)"></ul>
+	</div>
+	<div id="dim"></div>
+	<div id="logdiv" class="hide">
+		<div class="column">
+			<div class="right toolbar">
+				<button id="logdownload" class="download" onclick="saveLog()"></button>
+				<button id="logclip"     class="clip"     onclick="dom.log.select(); document.execCommand('copy')"></button>
+				<button id="logclear"    class="clear"    onclick="dom.log.value = ''"></button>
+				&nbsp;&nbsp;
+				<button id="theme"                        onclick="changeTheme(event)" accesskey="T" oncontextmenu="changeTheme(event)"></button>
+				<button id="color"                        onclick="changeTheme(event)" accesskey="C" oncontextmenu="changeTheme(event)"></button>
+				<button id="debug"                        onclick="toggle(event)"></button>
+				&nbsp;&nbsp;
+				<button id="logmin"      class="min"      onclick="dom.logbtn.click()"></button>
+			</div>
+			<textarea id="log" spellcheck="false"></textarea>
+		</div>
+	</div>
+	<div id="popupdiv" class="hide" onclick="Popup.close()">
+		<div id="popup" onclick="event.stopPropagation()">
+			<div id="popupicon"></div>
+			<div id="popupcontent"></div>
+			<button id="ok" onclick="Popup.close(event)"></button>
+			<button id="cancel" onclick="Popup.close()"></button>
+		</div>
+	</div>
+	<footer id="copyleft">
+		<a id="source" rel="noreferrer" target="_blank"></a>
+	</footer>
+</body>
+</html>
