@@ -1,0 +1,66 @@
+/* Layout only; colors and typography come from the stock player theme. */
+:root { color-scheme: dark; }
+:root.light { color-scheme: light; }
+html body, html.material body { font-size: 14px; line-height: 1.35; letter-spacing: -.015em; }
+html.material { --button-size: 2.15em; --space: .45em; }
+:root.material, :root.round { --radius: 6px; }
+html.colorborder body > div:not(#player) { border-radius: var(--radius); }
+body { padding-bottom: 170px; }
+#player { display: block; position: fixed; bottom: 0; top: auto; left: 0; right: 0; margin: 0; padding: .4em 1em; overflow: visible; border-radius: 0; border-top: 1px solid var(--focus-dim); box-shadow: 0 -4px 20px var(--box-shadow); z-index: 4; }
+#player:before { display: none; }
+#player-main { display: flex; width: 100%; align-items: center; }
+#player-main > #cover { flex-shrink: 0; min-width: 4em; max-width: 4em; min-height: 4em; max-height: 4em; object-fit: cover; }
+#player-main > #current { flex: 1; }
+#player #controls { flex-wrap: wrap; gap: .2em; }
+#player-actions { display: flex; flex: 0 0 auto; align-items: center; gap: .35em; margin-left: auto; padding-left: 1em; }
+#player-actions .drawer-toggle { display: inline-flex; align-items: center; justify-content: center; gap: .3em; width: auto; height: 2.5em; min-width: 2.5em; padding: .4em; border: 1px solid var(--border); white-space: nowrap; }
+#player-actions .drawer-toggle[aria-expanded="true"] { color: var(--focus); border-color: var(--focus-dim); }
+#player-actions svg { flex-shrink: 0; }
+#legacy-playlist-controls { display: none !important; }
+#queue-count { font-size: .85em; color: var(--text-dim); }
+#player > .player-drawer { display: block; width: 100%; box-sizing: border-box; }
+#player > .player-drawer { position: absolute; bottom: calc(100% + .5em); right: 1em; width: min(42em, calc(100vw - 2em)); max-height: min(65vh, 36em); overflow: auto; margin: 0; padding: 1em; border: 1px solid var(--focus-dim); border-radius: var(--radius); background: var(--bg-popup); box-shadow: 0 5px 30px var(--box-shadow); white-space: normal; }
+.drawer-heading { display: flex; align-items: center; justify-content: space-between; gap: 1em; margin-bottom: .6em; }
+#options::before, #playlistdiv::before { content: none; display: none; }
+.queue-toolbar { justify-content: flex-end; gap: .35em; margin-bottom: .25em; }
+#queue-clear { display: inline-flex; align-items: center; justify-content: center; width: 2.4em; height: 2.4em; padding: .35em; }
+#queue-clear:disabled, body.locked #queue-clear { opacity: .4; cursor: default; }
+#player #playlistdiv #trash { display: none; }
+#player #playlistdiv.drag #trash { display: flex; }
+#player .drawer-close { min-width: 2em; height: 2em; padding: 0; font-size: 1.2em; }
+.queue-icon { font-size: 1.5em; vertical-align: middle; }
+#player .player-drawer[hidden], #library[hidden] { display: none !important; }
+#player #options { margin: 0; padding: 0; }
+#player #options > .toolbar { justify-content: flex-start; gap: .25em; }
+#player #options button { font-size: .85em; }
+#player #options .menu { z-index: 5; }
+#player > #player-tools { width: min(23em, calc(100vw - 2em)); padding: .45em; }
+#player #options > .toolbar { display: flex; flex-direction: column; align-items: stretch; gap: .1em; }
+#player #options > .toolbar > button { width: 100%; text-align: left; border-radius: .5em; }
+#player #afterdiv { display: block; padding-top: .3em; margin-top: .3em; border-top: 1px solid var(--border); }
+#player #after { width: 100%; text-align: left; }
+#player #afteroptions { position: static; width: 100%; margin-top: .25em; box-shadow: none; }
+#player #shares .sharediv { flex-wrap: wrap; }
+#player #shares input, #player #shares select { width: 100%; flex-basis: 100%; min-width: 0; }
+#player #playlist { max-height: min(45vh, 25em); min-height: 2.5em; }
+#player #playlist li:not(#last) { position: relative; padding: .5em 7em .5em 0 !important; min-height: 2.8em; overflow-wrap: anywhere; }
+#player #playlist .queue-actions { position: absolute; right: 0; top: .3em; display: flex; gap: .1em; margin: 0; }
+#player #playlist .queue-actions button { font-size: .85em; padding: .25em .4em; height: 2em; }
+#player #playlistdiv.drag .queue-actions { pointer-events: none; }
+body.locked #player .queue-actions { display: none !important; }
+#player #playlist.resize { height: auto !important; resize: none; }
+#player #playlist:empty::after { content: "Очередь пуста — добавьте композиции из библиотеки"; height: auto; background: none; color: var(--text-dim); font: inherit; padding: .5em; }
+#player.big:not(.fix) #cover, #player.full:not(.fix) #cover { position: absolute; left: 1em; bottom: calc(100% + .5em); min-width: 0; min-height: 0; width: min(300px, 80vw); height: auto; max-width: min(300px, 80vw); max-height: 60vh; object-fit: contain; background: var(--bg); }
+#player.full:not(.fix) #current { margin-left: .5em; text-align: left; }
+#my-chart { display: block; margin: 1.15em 1.5em .5em; }
+body.dim #player { z-index: 1; }
+@media(max-width:740px) {
+    #player-main { flex-direction: row; }
+    #player { padding: .5em; }
+    #player:not(.fix) #cover { min-width: 3em; min-height: 3em; max-width: 3em; max-height: 3em; }
+    #player:not(.fix) #current { flex: 1; width: 0 !important; }
+    #player:not(.fix) #seek { width: min(80%, 18em); padding: 0; }
+    #player #controls { justify-content: center; }
+    #player-actions { padding-left: .35em; flex-direction: column; }
+    #my-chart { margin: 1em .5em; }
+}

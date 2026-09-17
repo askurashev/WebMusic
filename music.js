@@ -39,6 +39,14 @@ const
 	SET =  2;
 
 function init() {
+	if (window.location.protocol === 'file:') {
+		const message = document.createElement('p');
+		message.style.cssText = 'padding:2em;color:#ddd;background:#222;font:18px sans-serif;line-height:1.6';
+		message.textContent = 'Для работы плеера нужен локальный PHP-сервер. Запустите start.cmd в папке WebMusic и откройте http://127.0.0.1:8765/music.htm. Двойной клик по music.htm не запускает PHP.';
+		document.body.classList.remove('hide');
+		document.body.replaceChildren(message);
+		return;
+	}
 	url = document.URL.split('?play=', 2);
 	if (url[1] && url[1].startsWith('c:')) url[1] = deBase64(url[1].substring(2));
 	base = window.location.protocol +'//'+ window.location.host + window.location.pathname;
@@ -74,6 +82,7 @@ function init() {
 		prepUI();
 		buildLibrary('', library, dom.tree);
 		buildPlaylist();
+		window.dispatchEvent(new Event('music-library-ready'));
 		dom.hide('splash');
 		dom.show('body');
 		log(sourceurl, true);
@@ -187,6 +196,44 @@ function prepUI() {
 		cls(dom.library, 'unfold', ADD);
 
 	prepHotkeys();
+	if (dom['queue-count']) {
+		const updateCount = function() {
+			dom['queue-count'].textContent = cfg.playlist.length;
+			if (dom['queue-clear']) dom['queue-clear'].disabled = cfg.locked || cfg.playlist.length === 0;
+		};
+		new MutationObserver(updateCount).observe(dom.playlist, { childList: true });
+		updateCount();
+	}
+	const updateDockSpace = function() {
+		document.body.style.paddingBottom = (dom.player.offsetHeight + 24) + 'px';
+		window.dispatchEvent(new Event('music-dock-resized'));
+	};
+	new ResizeObserver(updateDockSpace).observe(dom.player);
+	updateDockSpace();
+	document.addEventListener('click', function(e) { if (!dom.player.contains(e.target)) closePlayerDrawers(false) });
+	document.addEventListener('keydown', function(e) {
+		if (e.key === 'Escape' && (!dom.playlistdiv.hidden || !document.getElementById('player-tools').hidden)) {
+			closePlayerDrawers(true); e.preventDefault();
+		}
+	});
+}
+
+function closePlayerDrawers(restoreFocus) {
+	for (const id of ['playlistdiv', 'player-tools']) {
+		if (!document.getElementById(id).hidden) togglePlayerDrawer(id, false, restoreFocus);
+	}
+}
+
+function togglePlayerDrawer(id, show, restoreFocus = true) {
+	const panel = document.getElementById(id);
+	const button = document.getElementById(id === 'playlistdiv' ? 'queue-toggle' : 'tools-toggle');
+	const open = typeof show === 'boolean' ? show : panel.hidden;
+	if (open) closePlayerDrawers(false);
+	panel.hidden = !open;
+	button.setAttribute('aria-expanded', String(open));
+	if (open && id === 'playlistdiv' && audio) resizePlaylist();
+	if (open) panel.focus({ preventScroll: true });
+	else if (restoreFocus) button.focus({ preventScroll: true });
 }
 
 function touchUI() {
@@ -198,16 +245,7 @@ function touchUI() {
 }
 
 function fixPlayer() {
-	if (!cls(dom.player, 'fix') && !cls(dom.body, 'dim')
-		&& window.pageYOffset > 1.5 * dom.player.offsetHeight
-		&& dom.doc.offsetHeight - dom.player.offsetHeight > window.innerHeight) {
-		playerheight = dom.player.offsetHeight + parseInt(window.getComputedStyle(dom.player).getPropertyValue('margin-top'));
-		dom.doc.style.paddingTop = playerheight +'px';
-		cls(dom.player, 'fix', ADD);
-	} else if (window.pageYOffset < 1.1 * playerheight) {
-		dom.doc.style.paddingTop = '';
-		cls(dom.player, 'fix', REM);
-	}
+	// Permanently docked to the bottom; no scroll-dependent relocation.
 }
 
 function ls() {
@@ -283,6 +321,7 @@ function prepAudio(id) {
 
 	a.onplay = function() {
 		a.log('Play');
+		notifyPlayback();
 		if (a.src.startsWith('data')) return;	// autoplay fix
 		cls(dom.playpause, 'playing', ADD);
 		cls(dom.album, 'dim', REM);
@@ -300,6 +339,7 @@ function prepAudio(id) {
 
 	a.onpause = function(e) {
 		a.log('Pause');
+		notifyPlayback();
 		if (a == audio[track]) {
 			cls(dom.playpause, 'playing', REM);
 			cls(dom.album, 'dim', ADD);
@@ -309,6 +349,7 @@ function prepAudio(id) {
 
 	a.onended = function() {
 		a.log('Ended');
+		notifyPlayback();
 	};
 
 	a.ontimeupdate = function() {
@@ -335,6 +376,7 @@ function prepAudio(id) {
 	};
 
 	a.onerror = function() {
+		notifyPlayback();
 		a.log('Error: '+ a.error.code +' '+ a.error.message, true);
 		if (a.src.startsWith('data')) return;	// autoplay fix
 		dom.playlist.childNodes[cfg.index].setAttribute('error', 1);
@@ -410,14 +452,15 @@ function buildLibrary(root, folder, element) {
 	}
 }
 
-function reloadLibrary() {
-	if (cfg.locked) return;
-	if (!confirm(str.reloadlibrary)) return;
-	dom.tree.innerHTML = '',
-	tree.length = songs.length = 0;
+function reloadLibrary(ask = true) {
+	if (cfg.locked) return Promise.reject(new Error('Снимите блокировку плеера для обновления библиотеки.'));
+	if (ask && !confirm(str.reloadlibrary)) return Promise.resolve(false);
+	return new Promise(function(resolve, reject) {
 	const lib = document.createElement('script');
 	lib.src = 'music.php'+ (url.length > 1 ? '?play='+ esc(url[1]) +'&' : '?') +'reload';
 	lib.onload = function() {
+		dom.tree.innerHTML = '';
+		tree.length = songs.length = 0;
 		buildLibrary('', library, dom.tree);
 		clearPlayed('reload');
 		library = null;
@@ -425,8 +468,11 @@ function reloadLibrary() {
 			filter();
 		if (cfg.after == 'randomfiltered')
 			buildFilteredLibrary(dom.randomfiltered.firstElementChild.textContent.trim());
+		resolve(true);
 	}
+	lib.onerror = function() { reject(new Error('Не удалось обновить библиотеку плеера.')) };
 	document.body.appendChild(lib);
+	});
 }
 
 function prepSongMode() {
@@ -587,12 +633,31 @@ function playlistItem(s) {
 		const nfo = getSongInfo(s.path);
 		li.innerHTML = nfo.title +'<span class="artist">'+ (nfo.artist ? '('+ nfo.artist +')' : '') +'</span>';
 		li.title = getAlbumInfo(nfo) + (mode ? '' : '\n\n'+ str.playlistdesc);
+		const actions = document.createElement('span');
+		actions.className = 'queue-actions';
+		[['↑', 'Поднять', -1], ['↓', 'Опустить', 1], ['×', 'Убрать из очереди', 0]].forEach(function(spec) {
+			const btn = document.createElement('button');
+			btn.textContent = spec[0]; btn.title = spec[1]; btn.setAttribute('aria-label', spec[1]);
+			btn.onclick = function(e) {
+				e.preventDefault(); e.stopPropagation();
+				if (cfg.locked) return;
+				const index = getIndex(li);
+				if (!spec[2]) { drag = li; removeItem(e); return; }
+				const next = index + spec[2];
+				if (next < 0 || next >= cfg.playlist.length) return;
+				const target = spec[2] > 0 ? next + 1 : next;
+				moveItem(li, dom.playlist.children[target] || null, index, target);
+			};
+			actions.appendChild(btn);
+		});
+		li.appendChild(actions);
 	}
 	return li;
 }
 
 function clickItem(e) {
-	const item = cls(e.target, 'artist') ? e.target.parentNode : e.target;
+	const item = e.target.closest('li');
+	if (!item || e.target.closest('button')) return;
 	if (cfg.locked || e.target.id == 'playlist') return;
 	if (cfg.removesongs) {
 		drag = item;
@@ -638,8 +703,8 @@ function endDrag() {
 function dropItem(e) {
 	e.preventDefault();
 	e.stopPropagation();
-	let to = e.target;
-	if (to.tagName != 'LI') to = to.parentNode;
+	let to = e.target.closest('li');
+	if (!drag || !to || to.parentNode !== dom.playlist) return;
 	log('Drag ['+ drag.textContent +'] to place of ['+ to.textContent +']');
 	cls(to, 'over', REM);
 	const indexfrom = e.dataTransfer.getData('text');
@@ -768,13 +833,17 @@ function zoom() {
 }
 
 function seek(e) {
+	const current = audio[track];
+	if (!Number.isFinite(current.duration) || current.duration <= 0) { onSeek = false; return; }
+	const position = Math.max(0, Math.min(1, Number(dom.seek.value))) * current.duration;
 	if (e == 'c') {
-		audio[track].currentTime = dom.seek.value * audio[track].duration;
+		current.currentTime = position;
+		onSeek = false;
 		dom.seek.blur();
 	}	else {
-		dom.time.textContent = timeTxt(~~(dom.seek.value * audio[track].duration))
-			+' / '+ timeTxt(~~audio[track].duration);
+		onSeek = true;
 	}
+	dom.time.textContent = timeTxt(~~position) +' / '+ timeTxt(~~current.duration);
 }
 
 function stop() {
@@ -910,6 +979,11 @@ function artistSkipped(path) {
 	return skip;
 }
 
+function audioSource(path) {
+	// Byte-range responses are required for reliable seeking on the local PHP server.
+	return 'charts.php?action=audio&source=' + encodeURIComponent(root + path);
+}
+
 function load(id, addtoplaylist = false) {
 	log('load('+ id +', addtoplaylist = '+ addtoplaylist +')');
 	clearInterval(retry);
@@ -923,7 +997,8 @@ function load(id, addtoplaylist = false) {
 	log('a.index = '+ a.index);
 	a.autoplay = false;
 	a.canplaythrough = false;
-	a.src = esc(root + cfg.playlist[a.index].path);
+	a.path = cfg.playlist[a.index].path;
+	a.src = audioSource(a.path);
 	a.load();
 	clearInterval(a.fade);
 	a.fade = null;
@@ -942,6 +1017,52 @@ function play(id) {
 	stop();
 	playNext();
 }
+
+// My Chart uses the existing queue and audio controls, without a second player.
+window.getMusicPlaybackState = function() {
+	const active = audio && audio[track];
+	return { path: active && active.path, playing: !!(active && active.path && !active.paused && !active.ended && !active.error) };
+};
+function notifyPlayback() {
+	window.dispatchEvent(new Event('music-playback-state'));
+}
+window.playChartSong = function(path) {
+	if (!audio || !dom) throw new Error('Плеер ещё загружается.');
+	if (cfg.locked) throw new Error('Снимите блокировку верхнего плеера для выбора композиции.');
+	if (audio[track].path === path && !audio[track].ended && !audio[track].error) {
+		if (audio[track].paused) start(audio[track]);
+		else audio[track].pause();
+		return;
+	}
+	const song = songs.findIndex(function(item) { return item.path === path });
+	if (song < 0) throw new Error('Трек не найден в плеере. Обновите библиотеку или страницу.');
+	let index = cfg.playlist.findIndex(function(item) { return item.path === path });
+	if (index < 0) {
+		add(song);
+		index = cfg.playlist.findIndex(function(item) { return item.path === path });
+	}
+	if (index < 0) throw new Error('Не удалось добавить трек в очередь плеера.');
+	play(index);
+};
+
+window.queueChartSongs = function(paths) {
+	if (!audio || !dom) throw new Error('Плеер ещё загружается.');
+	const before = cfg.playlist.length;
+	for (const path of paths) {
+		const id = songs.findIndex(function(item) { return item.path === path });
+		if (id >= 0) add(id);
+	}
+	return cfg.playlist.length - before;
+};
+
+var chartLibraryFilter = null;
+window.filterChartLibrary = function(paths, label) {
+	chartLibraryFilter = label ? new Set(paths) : null;
+	if (!dom || !dom.filter) return;
+	dom.filter.value = label;
+	if (cfg.after === 'randomfiltered') buildFilteredLibrary();
+};
+window.reloadMusicLibrary = function() { return reloadLibrary(false) };
 
 function mute(e = null) {
 	if (e) e.preventDefault();
@@ -1083,6 +1204,7 @@ function removePlaylist(e) {
 		else if (cls(dom.playlists, 'hide'))
 			menu('playlistload');
 		else {
+			window.dispatchEvent(new Event('music-playlists-changed'));
 			dom.playlists.removeChild(e.target);
 			if (!dom.playlists.hasChildNodes())
 				dom.playlists.innerHTML = '<p tabindex="1">'+ str.noplaylists +'</p>';
@@ -1105,6 +1227,7 @@ function savePlaylist() {
 		xhttp.onload = function() {
 			if (this.responseText != '')
 				alert(str.error +'\n\n'+ this.responseText);
+			else window.dispatchEvent(new Event('music-playlists-changed'));
 		}
 		xhttp.open('POST', 'music.php', true);
 		xhttp.setRequestHeader('Content-type', 'application/json');
@@ -1210,7 +1333,7 @@ function playNext(ended = false) {
 		prepNext();
 		stop();
 	}
-	if (audio[+!track].index && (!cfg.playlist[audio[+!track].index] || esc(root + cfg.playlist[audio[+!track].index].path) != audio[+!track].getAttribute('src'))) {
+	if (audio[+!track].index && (!cfg.playlist[audio[+!track].index] || audioSource(cfg.playlist[audio[+!track].index].path) != audio[+!track].getAttribute('src'))) {
 		log('PlayNext: last minute adjustment to playlist detected, prepping next track', true);
 		prepNext();
 	}
@@ -1290,6 +1413,7 @@ function toggle(e) {
 			if (cfg.locked) return;
 			dom.hide(['playlists', 'afteroptions']);	// Continue
 		case 'share':
+			togglePlayerDrawer('player-tools', true);
 			if (!sharing && button.id == 'share') return;
 			cls(dom.options, button.id, TOG);
 			cls(button, 'on', TOG);
@@ -1343,6 +1467,11 @@ function toggle(e) {
 }
 
 function buildFilteredLibrary(terms = dom.filter.value.trim()) {
+	if (chartLibraryFilter) {
+		songsFiltered.length = 0;
+		for (const song of songs) if (chartLibraryFilter.has(song.path)) songsFiltered.push(song.id);
+		return;
+	}
 	const termsArray = terms.toLowerCase().split(' ');
 	playedFiltered.length = songsFiltered.length = 0;
 
@@ -1356,6 +1485,7 @@ function toggleLock() {
 	if (!cfg.locked && cls(dom.options, 'playlistbtn'))
 		dom.playlistbtn.click();
 	cfg.locked ^= true;
+	if (dom['queue-clear']) dom['queue-clear'].disabled = cfg.locked || cfg.playlist.length === 0;
 	const act = cfg.locked ? ADD : REM;
 	cls(document.body, 'locked', act);
 	cls(dom.lock, 'on', act);
@@ -1409,9 +1539,7 @@ function menu(e) {
 				prepPlaylists('load');
 				break;
 			case dom.afteroptions:
-				cls(el, 'delay', !cls(dom.options, 'playlistbtn'));
-				if (!cls(dom.options, 'playlistbtn'))
-					dom.playlistbtn.click();
+				togglePlayerDrawer('player-tools', true);
 				cls(dom.stopplayback,   'on', cfg.after == 'stopplayback'   ? ADD : REM);
 				cls(dom.repeatplaylist, 'on', cfg.after == 'repeatplaylist' ? ADD : REM);
 				cls(dom.playlibrary,    'on', cfg.after == 'playlibrary'    ? ADD : REM);
@@ -1423,8 +1551,10 @@ function menu(e) {
 		}
 	} else switch (el) {
 			case dom.playlists:
-			case dom.afteroptions:
 				dom.playlistbtn.click();
+				break;
+			case dom.afteroptions:
+				dom.hide('afteroptions');
 				break;
 			default:
 				cls(el, 'hide', ADD);
@@ -1557,6 +1687,11 @@ function ffor(items, callback) {
 }
 
 function setFilter(f) {
+	if (window.findChartLibrary) {
+		const target = typeof f === 'string' ? f : f.target.textContent.trim();
+		window.findChartLibrary(target);
+		return;
+	}
 	if (mode) return;
 	if (typeof f === 'string')
 		dom.filter.value = f;
@@ -1822,6 +1957,7 @@ function prepHotkeys() {
 	}, false);
 
 	document.addEventListener('keydown', function(e) {
+		if (e.target.closest && e.target.closest('#my-chart')) return;
 		const el = document.activeElement;
 		if (e.altKey || e.ctrlKey) return;
 
@@ -1869,6 +2005,7 @@ function prepHotkeys() {
 
 		if (keyEl) {
 			e.preventDefault();
+			if (keyEl === dom.filter && window.findChartLibrary) return window.findChartLibrary('');
 			if (!menuKey && !dom.tree.contains(e.target))
 				e.target.blur();
 			if (e.key == keyEl.getAttribute('contextkey'))

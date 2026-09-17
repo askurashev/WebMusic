@@ -1,6 +1,45 @@
-/library
-
-/music.pls
-!/music.pls/README.md
-
+# Personal music, playlists, configuration, and chart history
+/[Ll]ibrary/
+/music.pls/
 /music.ini
+/music.ini.*
+/chart-data/
+/chart-exports/
+
+# Playlists and generated playlist backups, including custom locations
+*.mfp.json
+*.mfp.json.*
+*.m3u
+*.m3u8
+*.pls
+.playlists.lock
+.mfp-*
+
+# Audio files accidentally placed outside the default library
+*.[mM][pP]3
+*.[fF][lL][aA][cC]
+*.[oO][gG][gG]
+*.[aA][aA][cC]
+*.[mM]4[aA]
+*.[mM][pP]4
+*.[oO][pP][uU][sS]
+*.[wW][aA][vV]
+*.[wW][eE][bB][mM]
+*.[fF][lL][aA]
+*.[aA][iI][fF]
+*.[aA][iI][fF][fF]
+*.[wW][mM][aA]
+
+# Local runtimes, dependencies, logs, and machine-specific settings
+/.runtime/
+/node_modules/
+/.idea/
+/.vscode/*
+!/.vscode/WebMusic.code-workspace
+*.log
+.env
+.env.*
+!.env.example
+.DS_Store
+Thumbs.db
+Desktop.ini

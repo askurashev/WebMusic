@@ -71,6 +71,10 @@
 
 	$pl = json_decode(file_get_contents('php://input'), true);
 	if (isset($pl['name'])) {
+		require_once __DIR__ . '/music.playlists.php';
+		try {
+		$pl['name'] = mfpPlaylistName((string)$pl['name']);
+		$playlistLock = mfpPlaylistLock($cfg['playlistdir']);
 		if ($_SERVER['REQUEST_METHOD'] == 'DELETE') {
 			if (chdir($cfg['playlistdir']))
 				foreach (glob($pl['name'] .'.mfp.*') as $f)
@@ -78,9 +82,12 @@
 			exit;
 		}
 		$name = $cfg['playlistdir'] .'/'. $pl['name'] .'.mfp.json';
-		if (!is_dir($cfg['playlistdir'])) mkdir($cfg['playlistdir']);
-		if (file_exists($name)) rename($name, $name .'.'. time());
-		die(file_put_contents($name, json_encode($pl['songs'])));
+		$value = is_string($pl['songs']) ? json_decode($pl['songs'], true, 512, JSON_THROW_ON_ERROR) : $pl['songs'];
+		if (!is_array($value)) throw new RuntimeException('Invalid playlist');
+		mfpWritePlaylist($name, $value);
+		flock($playlistLock, LOCK_UN); fclose($playlistLock);
+		exit;
+		} catch (Throwable $e) { http_response_code(400); die($e->getMessage()); }
 	}
 
 	header('Content-Type: application/javascript; charset=utf-8');

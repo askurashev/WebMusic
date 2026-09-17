@@ -1,0 +1,148 @@
+// DOM integration tests. Test-only dependency: linkedom worker at .runtime/linkedom.mjs.
+import { readFile } from 'node:fs/promises';
+import { Script, createContext } from 'node:vm';
+import { parseHTML } from '../.runtime/linkedom.mjs';
+const { document, window } = parseHTML(await readFile(new URL('../music.htm', import.meta.url), 'utf8'));
+const code = await readFile(new URL('../charts.js', import.meta.url), 'utf8');
+const a = 'Artist A/Song A.mp3', b = 'Artist B/Song B.mp3', c = '<script>/Song C.mp3';
+let state = { revision: 0, scoring: 'reciprocal-100-v1', weeks: {
+    '2026-09-07': { songs: [a, b] }, '2026-09-14': { songs: [b, a] }
+} };
+let exported = [], confirmResult = true, count = 0;
+let lists = [{ name: 'Favorites', songs: [{ path: a }] }], queued = [];
+const $ = id => document.getElementById('my-chart').shadowRoot.getElementById(id);
+// Linkedom deliberately omits some native form control behavior.
+const selectPrototype = Object.getPrototypeOf(document.createElement('select'));
+Object.defineProperty(selectPrototype, 'value', { configurable: true, get() { return this._value ?? this.querySelector('option')?.value ?? ''; }, set(value) { this._value = value; } });
+selectPrototype.add = function(option) { this.append(option); };
+for (const select of document.getElementById('my-chart-template').content.querySelectorAll('select')) {
+    Object.defineProperty(select, 'value', { value: select.querySelector('option')?.getAttribute('value') || '', writable: true });
+    select.add = option => select.append(option);
+}
+function Option(text, value) { const el = document.createElement('option'); el.textContent = text; el.value = value; return el; }
+class TestDate extends Date { constructor(...args) { super(...(args.length ? args : ['2026-09-17T12:00:00'])); } }
+const fetch = async (url, options) => {
+    const action = new URL(url, 'http://localhost/').searchParams.get('action');
+    let data;
+    if (action === 'state') data = { state, token: 'test-token', songs: [a, b, c], libraryMissing: false, playlists: lists };
+    else if (action === 'playlist-add') {
+        const input = JSON.parse(options.body);
+        let list = lists.find(list => list.name === input.name);
+        if (!list) { list = { name: input.name, songs: [] }; lists.push(list); }
+        list.songs.push({ path: input.path }); data = { playlists: lists };
+    }
+    else {
+        const input = JSON.parse(options.body);
+        if (input.revision !== state.revision) throw new Error('stale revision');
+        if (action === 'save') { state.weeks[input.week] = { songs: input.songs }; state.revision++; data = { state }; }
+        else { exported.push(input.week); data = { export: { count: state.weeks[input.week].songs.length, path: 'test/current' } }; }
+    }
+    return { ok: true, json: async () => JSON.parse(JSON.stringify(data)) };
+};
+const sandbox = createContext({ document, window, Option, Date: TestDate, fetch, confirm: () => confirmResult, prompt: () => 'New playlist', console });
+new Script(code).runInContext(sandbox);
+for (const select of document.getElementById('my-chart').shadowRoot.querySelectorAll('select')) {
+    Object.defineProperty(select, 'value', { value: select.querySelector('option')?.getAttribute('value') || '', writable: true });
+    select.add = option => select.append(option);
+}
+const tick = () => new Promise(resolve => setTimeout(resolve, 0));
+const check = (condition, label) => { if (!condition) throw new Error('FAIL: ' + label); count++; console.log('PASS ' + label); };
+const paths = () => [...$('ranking').querySelectorAll('.info')].map(el => el.dataset.path);
+const click = button => button.onclick();
+await tick();
+check($('week').value === '2026-09-14' && paths().join('|') === [b, a].join('|'), 'open current Monday and saved order');
+check($('save').closest('.chart') && $('save').querySelector('svg') && $('save').getAttribute('aria-label'), 'export icon belongs to week chart and has an accessible label');
+check(document.getElementById('library') !== $('library'), 'chart and original player have isolated element IDs');
+check(!document.getElementById('my-chart').shadowRoot.querySelector('audio'), 'one shared player, no second audio control');
+let previewPath;
+window.playChartSong = path => { previewPath = path; };
+click($('library').querySelector('button'));
+check(previewPath === a, 'preview delegates to the standard player');
+let playback = { path: a, playing: true };
+window.getMusicPlaybackState = () => playback;
+window.dispatchEvent(new window.Event('music-playback-state'));
+const playButtons = () => [...document.getElementById('my-chart').shadowRoot.querySelectorAll('[data-play-path]')];
+check(playButtons().filter(el => el.dataset.playPath === a).every(el => el.textContent === 'Ⅱ'), 'playing song shows pause in library and ranking');
+const originalRow = $('library').firstElementChild;
+playback.playing = false;
+window.dispatchEvent(new window.Event('music-playback-state'));
+check(playButtons().every(el => el.textContent === '▶') && $('library').firstElementChild === originalRow, 'pause updates icons without rebuilding lists');
+playback = { path: b, playing: true };
+window.dispatchEvent(new window.Event('music-playback-state'));
+check(playButtons().filter(el => el.dataset.playPath === b).every(el => el.getAttribute('aria-pressed') === 'true'), 'automatic track change updates both lists');
+const workspace = document.getElementById('my-chart').shadowRoot.querySelector('.workspace');
+window.innerHeight = 900; window.scrollY = 0;
+workspace.getBoundingClientRect = () => ({ top: 180 - window.scrollY });
+Object.defineProperty(document.getElementById('player'), 'offsetHeight', { value: 90, configurable: true });
+window.dispatchEvent(new window.Event('resize'));
+check(document.getElementById('my-chart').style.getPropertyValue('--workspace-height') === '618px', 'panels fit available viewport above dock');
+window.scrollY = 200;
+window.dispatchEvent(new window.Event('music-dock-resized'));
+check(document.getElementById('my-chart').style.getPropertyValue('--workspace-height') === '618px', 'scrolling does not grow panels or move totals');
+check($('stats').children.length === 2, 'initial monthly summary');
+check(!$('library').querySelector('script'), 'file names are rendered as text');
+click($('ranking').children[1].querySelector('.actions button'));
+check(paths().join('|') === [a, b].join('|'), 'move track with keyboard-accessible button');
+check($('export').disabled, 'unsaved ranking cannot be exported');
+await click($('save'));
+check(exported.join() === '2026-09-14', 'saving latest chart automatically exports audio');
+click($('next-week'));
+check($('week').value === '2026-09-21' && paths().join('|') === [a, b].join('|'), 'next week inherits preceding chart');
+click($('ranking').children[1].querySelector('.actions button:last-child'));
+const addC = [...$('library').children].find(row => row.querySelector('.info')?.dataset.path === c).querySelector('.actions button:last-child');
+click(addC);
+click($('ranking').children[1].querySelector('.actions button'));
+await click($('save'));
+check(state.weeks['2026-09-07'].songs.join('|') === [a, b].join('|'), 'older snapshot survives weekly edits');
+check(state.weeks['2026-09-21'].songs.join('|') === [c, a].join('|'), 'newcomer, removal and reordering saved');
+const summary = [...$('stats').children].map(row => ({ name: row.children[1].querySelector('.info').dataset.path, points: row.children[2].textContent, weeks: row.children[3].textContent }));
+check(summary[0].name.includes(a) && summary[0].points === '250' && summary[0].weeks === '3', 'accumulate 100 / rank over weeks');
+check(summary[1].name.includes(b) && summary[2].name.includes(c), 'equal points broken by number of weeks');
+$('archive').value = '2026-09-07'; $('archive').onchange();
+click($('ranking').children[0].querySelectorAll('.actions button')[1]);
+await click($('save'));
+check(exported.length === 2, 'editing archive does not overwrite current export');
+$('period-kind').value = 'year'; $('period-kind').onchange();
+check($('period').value === '2026' && $('stats').children.length === 3, 'yearly summary');
+$('period').value = '2025'; $('period').oninput();
+check($('stats').textContent.includes('пока нет'), 'empty year');
+click($('ranking').children[0].querySelectorAll('.actions button')[1]);
+confirmResult = false; $('week').value = '2026-10-01'; $('week').onchange();
+check($('week').value === '2026-09-07', 'cancel navigation with unsaved changes');
+function dragToEnd(row) {
+    const start = new window.Event('dragstart', { bubbles: true, cancelable: true });
+    start.dataTransfer = { setData() {}, effectAllowed: '' }; row.dispatchEvent(start);
+    const drop = new window.Event('drop', { bubbles: true, cancelable: true });
+    drop.clientY = 0; $('ranking').dispatchEvent(drop);
+}
+dragToEnd([...$('library').children].find(row => row.querySelector('.info')?.dataset.path === c));
+check(paths().at(-1) === c && paths().length === 3, 'drag library track into chart');
+dragToEnd($('ranking').children[0]);
+check(paths().join('|') === [b, c, a].join('|'), 'drag existing rank to the end');
+check(document.getElementById('library').hidden, 'duplicate stock library is not displayed');
+check(document.getElementById('player').contains(document.getElementById('playlistdiv')) && document.getElementById('playlistdiv').hidden, 'queue is collapsed inside docked player');
+check(document.getElementById('player').contains(document.getElementById('options')), 'stock tools are inside docked player');
+$('playlist-filter').value = 'Favorites'; $('playlist-filter').onchange();
+check($('library').children.length === 1 && $('library').querySelector('.info').dataset.path === a, 'filter library by saved playlist');
+window.queueChartSongs = paths => { queued = [...paths]; return paths.length; };
+click($('enqueue-filtered'));
+check(queued.join() === a, 'enqueue all adds only filtered playlist songs');
+$('search').value = 'no-match'; $('search').oninput();
+check($('enqueue-filtered').disabled, 'search intersects playlist filter');
+$('search').value = ''; $('playlist-filter').value = ''; $('playlist-filter').onchange();
+let picker = [...$('library').children].find(row => row.querySelector('.info')?.dataset.path === b).querySelector('select');
+picker.value = 'p:0'; await picker.onchange();
+check(lists[0].songs.some(song => song.path === b), 'per-track dropdown appends to selected playlist');
+picker = [...$('library').children].find(row => row.querySelector('.info')?.dataset.path === c).querySelector('select');
+picker.value = 'new'; await picker.onchange();
+check(lists.find(list => list.name === 'New playlist').songs[0].path === c, 'per-track dropdown creates a new playlist');
+check(paths().join('|') === [b, c, a].join('|'), 'playlist editing preserves chart draft');
+click($('enqueue-chart'));
+check(queued.join('|') === paths().join('|'), 'enqueue whole chart preserves ranking order');
+check($('library').querySelector('.playlist-tag').textContent === 'Favorites', 'playlist membership appears as a tag');
+check(!$('library').querySelector('.path') && !$('library').textContent.includes('Artist A/'), 'file path is hidden from secondary text');
+check($('library').querySelector('.info').title === a, 'full path remains available as tooltip');
+check($('library').querySelector('.format-tag').textContent === 'MP3', 'format shown as compact metadata');
+$('period').value = '2026'; $('period').oninput();
+check($('ranking').querySelector('.playlist-tag') && $('stats').querySelector('.playlist-tag'), 'playlist tags update in rankings and totals');
+console.log(`${count} UI assertions passed.`);
