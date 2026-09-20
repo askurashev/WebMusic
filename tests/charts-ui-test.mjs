@@ -63,7 +63,9 @@ const fetch = async (url, options) => {
     }
     return { ok: true, json: async () => JSON.parse(JSON.stringify(data)) };
 };
-const sandbox = createContext({ document, window, Option, Date: TestDate, fetch, confirm: () => confirmResult, prompt: () => 'New playlist', console });
+let copiedText = '', clipboardError = false;
+const navigator = { clipboard: { async writeText(text) { if (clipboardError) throw new Error('Denied'); copiedText = text; } } };
+const sandbox = createContext({ document, window, navigator, Option, Date: TestDate, fetch, confirm: () => confirmResult, prompt: () => 'New playlist', console });
 new Script(code).runInContext(sandbox);
 for (const select of document.getElementById('my-chart').shadowRoot.querySelectorAll('select')) {
     Object.defineProperty(select, 'value', { value: select.querySelector('option')?.getAttribute('value') || '', writable: true });
@@ -78,6 +80,12 @@ check($('week').value === '2026-09-14' && paths().join('|') === [b, a].join('|')
 check($('save').closest('.chart') && $('save').querySelector('svg') && $('save').getAttribute('aria-label'), 'export icon belongs to week chart and has an accessible label');
 check(document.getElementById('library') !== $('library'), 'chart and original player have isolated element IDs');
 check(!document.getElementById('my-chart').shadowRoot.querySelector('audio'), 'one shared player, no second audio control');
+await click($('library').querySelector('.copy-title-button'));
+check(copiedText === 'Song A', 'copy falls back to filename without extension when tags are missing');
+clipboardError = true;
+await click($('library').querySelector('.copy-title-button'));
+check($('status').classList.contains('error'), 'clipboard rejection is reported');
+clipboardError = false;
 let previewPath;
 window.playChartSong = path => { previewPath = path; };
 click($('library').querySelector('button'));
@@ -214,6 +222,8 @@ await $('tag-form').onsubmit({ preventDefault() {} });
 check(!$('tag-editor').open && window.musicMetadata[a].artist === 'Новый исполнитель', 'successful tag save closes dialog and updates shared metadata');
 check($('library').textContent.includes('<img src=x onerror=alert(1)> Песня') && !$('library').querySelector('img'), 'tag text cannot inject HTML');
 check(paths().join('|') === draft, 'tag editing preserves unsaved chart draft');
+await click($('library').querySelector('.copy-title-button'));
+check(copiedText === 'Новый исполнитель — <img src=x onerror=alert(1)> Песня', 'copy uses current artist and title as plain text');
 $('search').value = 'Новый исполнитель'; $('search').oninput();
 check(libraryPaths().join() === a, 'search matches corrected artist');
 $('search').value = ''; $('search').oninput();
@@ -223,7 +233,11 @@ check(!$('reload-library').disabled && libraryPaths().length === 3 && metadataRe
 releaseMetadata(); await tick();
 check(window.musicMetadata[a].artist === 'Новый исполнитель', 'background tags cannot overwrite newly saved edits');
 check(metadataRequests[1].join('|') === [b, c].join('|'), 'partial metadata batch resumes at first unprocessed track');
+const openPicker = $('library').querySelector('.playlist-picker');
+openPicker.onfocus();
 releaseMetadata(); await tick();
+check($('library').querySelector('.playlist-picker') === openPicker && openPicker.isConnected, 'background tags preserve focused playlist dropdown');
+openPicker.onblur(); await tick();
 check($('library').textContent.includes('Background artist'), 'background tags update track labels');
 releaseMetadata(); await tick();
 check(metadataRequests.length === 3 && paths().join('|') === draft, 'background loading finishes and preserves chart draft');

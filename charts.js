@@ -12,6 +12,7 @@
     let metadataGeneration = 0;
     const editedMetadata = new Set();
     let savedPlaylists = [], onlinePlaylists = true, playlistBusy = false, visiblePaths = [];
+    let focusedPlaylistPicker = null, libraryRenderPending = false;
     const collator = new Intl.Collator('ru', { numeric: true, sensitivity: 'base' });
     const localDate = date => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
     function monday(value) {
@@ -48,6 +49,14 @@
         const tags = metadata[path];
         const name = tags?.title || path.split('/').pop().replace(/\.[^.]+$/, '');
         return tags?.artist ? `${tags.artist} — ${name}` : name;
+    }
+    async function copySongTitle(path) {
+        try {
+            await navigator.clipboard.writeText(title(path));
+            status('Название и исполнители скопированы.');
+        } catch (_) {
+            status('Не удалось скопировать название и исполнителей в буфер обмена.', true);
+        }
     }
     function receiveMetadata(value) {
         metadata = value || {};
@@ -181,6 +190,9 @@
         row.addEventListener('dragend', () => { dragged = null; clearDrop(); });
     }
     function renderLibrary() {
+        // Replacing a focused native select closes its popup, including during tag loading.
+        if (focusedPlaylistPicker?.isConnected) { libraryRenderPending = true; return; }
+        libraryRenderPending = false;
         const terms = $('search').value.toLocaleLowerCase().trim().split(/\s+/).filter(Boolean);
         const selected = savedPlaylists.find(list => list.name === $('playlist-filter').value);
         const playlistPaths = selected ? new Set(selected.songs.map(song => song.path)) : null;
@@ -205,6 +217,10 @@
             archiveButton.setAttribute('aria-pressed', String(archived.has(path)));
             archiveButton.innerHTML = '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3h18v5H3zM5 8v13h14V8M10 12h4"/></svg>';
             actions.append(archiveButton);
+            const copyButton = button('', `Копировать название и исполнителей: ${title(path)}`, () => copySongTitle(path));
+            copyButton.className = 'copy-title-button';
+            copyButton.innerHTML = '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="13" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h3"/></svg>';
+            actions.append(copyButton);
             if (/\.mp3$/i.test(path)) actions.append(button('✎', `Редактировать теги: ${title(path)}`, () => editTags(path)));
             const picker = node('select', undefined, 'playlist-picker');
             picker.setAttribute('aria-label', `Добавить ${title(path)} в плейлист`);
@@ -216,7 +232,16 @@
             });
             picker.add(new Option('＋ Создать новый…', 'new'));
             picker.disabled = busy || playlistBusy || !onlinePlaylists;
+            picker.onfocus = () => { focusedPlaylistPicker = picker; };
+            picker.onpointerdown = picker.onkeydown = picker.onfocus;
+            picker.onblur = () => {
+                if (focusedPlaylistPicker === picker) focusedPlaylistPicker = null;
+                // Let a click on another row action finish before replacing its target.
+                window.setTimeout(() => { if (libraryRenderPending) renderLibrary(); }, 0);
+            };
             picker.onchange = () => {
+                focusedPlaylistPicker = null;
+                window.setTimeout(() => { if (libraryRenderPending) renderLibrary(); }, 0);
                 const value = picker.value; picker.value = '';
                 if (value) return addToPlaylist(path, value === 'new' ? null : savedPlaylists[Number(value.slice(2))].name);
             };
