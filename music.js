@@ -610,8 +610,8 @@ function buildPlaylist() {
 		if (i == cfg.index) {
 			cls(li, 'playing', ADD);
 			const nfo = getSongInfo(cfg.playlist[i].path);
-			dom.album.innerHTML = getAlbumInfo(nfo);
-			dom.title.innerHTML = nfo.title;
+			dom.album.textContent = getAlbumInfo(nfo);
+			dom.title.textContent = nfo.title;
 		}
 	}
 
@@ -631,7 +631,11 @@ function playlistItem(s) {
 		li.id = 'last';
 	} else {
 		const nfo = getSongInfo(s.path);
-		li.innerHTML = nfo.title +'<span class="artist">'+ (nfo.artist ? '('+ nfo.artist +')' : '') +'</span>';
+		li.textContent = nfo.title;
+		const artistLabel = document.createElement('span');
+		artistLabel.className = 'artist';
+		artistLabel.textContent = nfo.artist ? '(' + nfo.artist + ')' : '';
+		li.appendChild(artistLabel);
 		li.title = getAlbumInfo(nfo) + (mode ? '' : '\n\n'+ str.playlistdesc);
 		const actions = document.createElement('span');
 		actions.className = 'queue-actions';
@@ -779,6 +783,8 @@ function deBase64(s) {
 }
 
 function getSongInfo(path) {
+	const tags = window.musicMetadata?.[path];
+	const withTags = info => ({ ...info, ...(tags?.title ? { title: tags.title } : {}), ...(tags?.artist ? { artist: tags.artist } : {}), albumArtist: tags?.albumArtist || '' });
 	log('getSongInfo: '+ path);
 	if (!path.includes('/') && url.length > 1)
 		path = root + path;	// For shared songs/folders
@@ -788,7 +794,7 @@ function getSongInfo(path) {
 		try {
 			nfo = path.match(pathexp[i]);
 			log(nfo.groups);
-			return nfo.groups;
+			return withTags(nfo.groups);
 		} catch(e) {
 			if (nfo) log(e);
 			if (i < 1) {
@@ -802,11 +808,24 @@ function getSongInfo(path) {
 					}
 				nfo.title = path.substring(path.lastIndexOf('/') + 1, path.lastIndexOf('.'));
 				log(nfo);
-				return nfo;
+				return withTags(nfo);
 			}
 		}
 	}
 }
+
+window.refreshMusicMetadata = function() {
+	if (!cfg?.playlist || !dom?.playlist) return;
+	buildPlaylist();
+	const path = cfg.playlist[cfg.index]?.path;
+	if (!path) return;
+	const nfo = getSongInfo(path);
+	dom.pagetitle.textContent = nfo.title + (nfo.artist ? ' - ' + nfo.artist : '');
+	if (navigator.mediaSession?.metadata) {
+		navigator.mediaSession.metadata.title = nfo.title;
+		navigator.mediaSession.metadata.artist = nfo.artist || '';
+	}
+};
 
 function getAlbumInfo(nfo) {
 	const artist = nfo.artist ? nfo.artist : '';
@@ -1354,16 +1373,16 @@ function playNext(ended = false) {
 		if (cls(dom.player, 'full')) dom.current.style.opacity = 0;
 		setTimeout(function() {
 			if (index != cfg.index) return;	// If song has changed since timeout
-			dom.album.innerHTML = getAlbumInfo(nfo);
-			dom.title.innerHTML = nfo.title;
+			dom.album.textContent = getAlbumInfo(nfo);
+			dom.title.textContent = nfo.title;
 			dom.cover.src = cover;
 			setTimeout(function() {
 				if (cls(dom.player, 'full')) dom.current.style.opacity = '';
 			}, 150);
 		}, 150);
 	} else {
-		dom.album.innerHTML = getAlbumInfo(nfo);
-		dom.title.innerHTML = nfo.title;
+		dom.album.textContent = getAlbumInfo(nfo);
+		dom.title.textContent = nfo.title;
 	}
 
 	dom.pagetitle.textContent = nfo.title + (nfo.artist ? ' - '+ nfo.artist : '');

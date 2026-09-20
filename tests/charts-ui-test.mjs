@@ -10,6 +10,8 @@ let state = { revision: 0, scoring: 'reciprocal-100-v1', weeks: {
 } };
 let exported = [], confirmResult = true, count = 0;
 let lists = [{ name: 'Favorites', songs: [{ path: a }] }], queued = [];
+let archived = [], archiveError = false;
+let trackTags = { artist: 'Artist', albumArtist: 'Album artist', title: 'Old title' }, tagsError = false;
 const $ = id => document.getElementById('my-chart').shadowRoot.getElementById(id);
 // Linkedom deliberately omits some native form control behavior.
 const selectPrototype = Object.getPrototypeOf(document.createElement('select'));
@@ -24,7 +26,20 @@ class TestDate extends Date { constructor(...args) { super(...(args.length ? arg
 const fetch = async (url, options) => {
     const action = new URL(url, 'http://localhost/').searchParams.get('action');
     let data;
-    if (action === 'state') data = { state, token: 'test-token', songs: [a, b, c], libraryMissing: false, playlists: lists };
+    if (action === 'state') data = { state, archived, token: 'test-token', songs: [a, b, c], libraryMissing: false, playlists: lists };
+    else if (action === 'tags-read') data = { tags: trackTags, revision: 'tag-revision' };
+    else if (action === 'tags-save') {
+        if (tagsError) throw new Error('File changed');
+        trackTags = JSON.parse(options.body).tags;
+        data = { tags: trackTags, revision: 'updated-revision' };
+    }
+    else if (action === 'archive-set') {
+        if (archiveError) throw new Error('Archive unavailable');
+        const input = JSON.parse(options.body);
+        archived = archived.filter(path => path !== input.path);
+        if (input.archived) archived.push(input.path);
+        data = { archived };
+    }
     else if (action === 'playlist-add') {
         const input = JSON.parse(options.body);
         let list = lists.find(list => list.name === input.name);
@@ -89,7 +104,7 @@ check(exported.join() === '2026-09-14', 'saving latest chart automatically expor
 click($('next-week'));
 check($('week').value === '2026-09-21' && paths().join('|') === [a, b].join('|'), 'next week inherits preceding chart');
 click($('ranking').children[1].querySelector('.actions button:last-child'));
-const addC = [...$('library').children].find(row => row.querySelector('.info')?.dataset.path === c).querySelector('.actions button:last-child');
+const addC = [...$('library').children].find(row => row.querySelector('.info')?.dataset.path === c).querySelectorAll('.actions button')[1];
 click(addC);
 click($('ranking').children[1].querySelector('.actions button'));
 await click($('save'));
@@ -145,4 +160,51 @@ check($('library').querySelector('.info').title === a, 'full path remains availa
 check($('library').querySelector('.format-tag').textContent === 'MP3', 'format shown as compact metadata');
 $('period').value = '2026'; $('period').oninput();
 check($('ranking').querySelector('.playlist-tag') && $('stats').querySelector('.playlist-tag'), 'playlist tags update in rankings and totals');
+const libraryPaths = () => [...$('library').querySelectorAll('.info')].map(el => el.dataset.path);
+const filter = (id, value) => { $(id).value = value; $(id).onchange(); };
+filter('chart-filter', 'out');
+check(libraryPaths().length === 0, 'chart filter includes unsaved additions');
+click($('ranking').children[0].querySelector('.actions button:last-child'));
+check(libraryPaths().join() === b, 'chart removal immediately updates uncharted filter');
+filter('chart-filter', 'in');
+check(libraryPaths().join('|') === [a, c].join('|'), 'chart filter shows only current ranking');
+filter('chart-filter', '');
+const draft = paths().join('|');
+await click($('library').querySelector('.archive-button'));
+check(archived.join() === a && paths().join('|') === draft, 'archive persists without changing chart draft');
+filter('archive-filter', 'in');
+check(libraryPaths().join() === a && $('library').querySelector('.archive-button').getAttribute('aria-pressed') === 'true', 'archived filter and active archive button');
+filter('chart-filter', 'out');
+check(libraryPaths().length === 0, 'archive and chart filters intersect');
+filter('chart-filter', '');
+filter('playlist-filter', 'Favorites');
+$('search').value = 'Song A'; $('search').oninput();
+check(libraryPaths().join() === a, 'archive intersects playlist and search');
+click($('enqueue-filtered'));
+check(queued.join() === a, 'enqueue uses archive-filtered result');
+archiveError = true;
+await click($('library').querySelector('.archive-button'));
+check(libraryPaths().join() === a && !$('library').querySelector('.archive-button').disabled, 'failed archive update preserves membership and enables retry');
+archiveError = false;
+await click($('library').querySelector('.archive-button'));
+check(libraryPaths().length === 0 && archived.length === 0, 'restore immediately removes song from archive filter');
+$('search').value = ''; filter('playlist-filter', ''); filter('archive-filter', 'out');
+check(libraryPaths().length === 3, 'unarchived filter shows restored tracks');
+filter('archive-filter', '');
+$('tag-editor').showModal = function() { this.open = true; };
+$('tag-editor').close = function() { this.open = false; this.dispatchEvent(new window.Event('close')); };
+await click($('library').querySelector('button[title^="Редактировать теги"]'));
+check($('tag-editor').open && $('tag-artist').value === 'Artist' && $('tag-albumArtist').value === 'Album artist', 'editor loads actual file tags into three fields');
+$('tag-title').value = '<img src=x onerror=alert(1)> Песня';
+$('tag-artist').value = 'Новый исполнитель';
+tagsError = true;
+await $('tag-form').onsubmit({ preventDefault() {} });
+check($('tag-editor').open && $('tag-error').textContent === 'File changed' && !$('tag-save').disabled, 'failed tag save retains edits and allows retry');
+tagsError = false;
+await $('tag-form').onsubmit({ preventDefault() {} });
+check(!$('tag-editor').open && window.musicMetadata[a].artist === 'Новый исполнитель', 'successful tag save closes dialog and updates shared metadata');
+check($('library').textContent.includes('<img src=x onerror=alert(1)> Песня') && !$('library').querySelector('img'), 'tag text cannot inject HTML');
+check(paths().join('|') === draft, 'tag editing preserves unsaved chart draft');
+$('search').value = 'Новый исполнитель'; $('search').oninput();
+check(libraryPaths().join() === a, 'search matches corrected artist');
 console.log(`${count} UI assertions passed.`);

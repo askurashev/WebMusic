@@ -90,7 +90,13 @@ This is a personal application without user accounts or server-side access contr
 
 The library and weekly chart sit above the bottom player. Their height adapts to the available viewport, with scrolling inside long lists. Monthly/yearly totals remain below them and are reached by scrolling the page.
 
-Track titles in the chart workspace come from filenames without their extensions, rather than embedded ID3 tags. Use descriptive filenames such as `Artist - Song.mp3`. The original player also uses the configurable `pathexp` naming pattern.
+MP3 titles and artists are read from supported embedded ID3 tags. Empty or unsupported tags fall back to filenames (and the player's configurable `pathexp` naming pattern). Search also includes the artist and album artist.
+
+Use the pencil button beside an MP3 in the library to edit **artist, album artist, and song title**. Save writes into the MP3 itself without re-encoding audio or renaming the file; playlists and chart history keep their existing paths. The PHP `iconv` extension and write permission to both the file and its folder are required. No additional runtime or package installation is needed.
+
+The editor supports plain ID3v2.2, v2.3, v2.4, ID3v1-only files, and files without tags. Existing non-edited ID3v2 frames (including artwork) are preserved byte for byte. Existing ID3v1 title/artist fields are synchronized with their legacy length and encoding limits; full Unicode values live in ID3v2. Complex headers (extended headers, tag-level unsynchronisation, compression, footers), specially flagged edited frames, malformed tags, and tags over 16 MB are rejected without changing the original.
+
+Each save first creates a verified original-file backup in `chart-data/tag-backups/`. Backups have hashed filenames and a 15-byte `<?php exit; ?>` plus newline prefix to prevent direct HTTP downloads. To restore, copy the bytes after that prefix into a new `.mp3` file; inspect it before replacing the current file. Backups are retained and consume space equivalent to each saved original. Existing chart exports must be refreshed separately to include tag changes. If another editor changes the file, reopen the tag dialog before saving again.
 
 | Control | Action |
 | --- | --- |
@@ -333,6 +339,7 @@ Server integration tests create their own temporary library and server rather th
 
 ```sh
 php tests/charts-test.php
+php tests/metadata-test.php
 ```
 
 DOM tests use Node.js and a test-only LinkeDOM module. Save `https://unpkg.com/linkedom@0.18.12/worker.js` as `.runtime/linkedom.mjs`, then run:

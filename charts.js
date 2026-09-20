@@ -7,6 +7,8 @@
     const $ = id => app.getElementById(id);
     let state, token, library = [], available = new Set(), ranking = [], week, dirty = false, busy = false, shown = 100;
     let dragged = null, lastExport = null;
+    let archived = new Set(), archiveBusy = false;
+    let metadata = {}, editingPath = null, editingRevision = '', tagBusy = false;
     let savedPlaylists = [], onlinePlaylists = true, playlistBusy = false, visiblePaths = [];
     const collator = new Intl.Collator('ru', { numeric: true, sensitivity: 'base' });
     const localDate = date => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
@@ -40,11 +42,59 @@
         if (className) element.className = className;
         return element;
     }
-    function title(path) { return path.split('/').pop().replace(/\.[^.]+$/, ''); }
+    function title(path) {
+        const tags = metadata[path];
+        const name = tags?.title || path.split('/').pop().replace(/\.[^.]+$/, '');
+        return tags?.artist ? `${tags.artist} — ${name}` : name;
+    }
+    function receiveMetadata(value) {
+        metadata = value || {};
+        window.musicMetadata = metadata;
+        window.refreshMusicMetadata?.();
+    }
+    async function editTags(path) {
+        if (tagBusy || editingPath) return;
+        editingPath = path; tagBusy = true;
+        $('tag-path').textContent = path; $('tag-error').textContent = '';
+        $('tag-save').disabled = true;
+        for (const field of ['artist', 'albumArtist', 'title']) { $('tag-' + field).value = ''; $('tag-' + field).disabled = true; }
+        $('tag-editor').showModal();
+        try {
+            const result = await api('tags-read', { path });
+            if (editingPath !== path) return;
+            editingRevision = result.revision;
+            for (const field of ['artist', 'albumArtist', 'title']) { $('tag-' + field).value = result.tags[field]; $('tag-' + field).disabled = false; }
+            $('tag-save').disabled = false; $('tag-artist').focus();
+        } catch (error) { $('tag-error').textContent = error.message; }
+        finally { tagBusy = false; }
+    }
+    $('tag-cancel').onclick = () => { if (!tagBusy) $('tag-editor').close(); };
+    $('tag-editor').addEventListener('keydown', event => event.stopPropagation());
+    $('tag-editor').addEventListener('cancel', event => { if (tagBusy) event.preventDefault(); });
+    $('tag-editor').addEventListener('close', () => { editingPath = null; });
+    $('tag-form').onsubmit = async event => {
+        event.preventDefault();
+        if (tagBusy || !editingPath || $('tag-save').disabled) return;
+        const tags = {};
+        for (const field of ['artist', 'albumArtist', 'title']) tags[field] = $('tag-' + field).value;
+        tagBusy = true; $('tag-save').disabled = true; $('tag-cancel').disabled = true; $('tag-error').textContent = '';
+        for (const field of ['artist', 'albumArtist', 'title']) $('tag-' + field).disabled = true;
+        try {
+            const result = await api('tags-save', { path: editingPath, tags, revision: editingRevision });
+            metadata[editingPath] = result.tags; receiveMetadata(metadata);
+            renderLibrary(); renderRanking(); renderStats();
+            $('tag-editor').close(); status('Теги сохранены в MP3. Резервная копия создана.');
+        } catch (error) { $('tag-error').textContent = error.message; }
+        finally {
+            tagBusy = false; $('tag-save').disabled = false; $('tag-cancel').disabled = false;
+            for (const field of ['artist', 'albumArtist', 'title']) $('tag-' + field).disabled = false;
+        }
+    };
     function info(path) {
         const el = node('div', undefined, 'info');
         el.dataset.path = path; el.title = path;
         const tags = node('div', undefined, 'track-meta');
+        if (archived.has(path)) tags.append(node('span', 'В архиве', 'archive-tag'));
         for (const list of savedPlaylists) {
             if (list.songs.some(song => song.path === path)) tags.append(node('span', list.name, 'playlist-tag'));
         }
@@ -108,9 +158,14 @@
         const terms = $('search').value.toLocaleLowerCase().trim().split(/\s+/).filter(Boolean);
         const selected = savedPlaylists.find(list => list.name === $('playlist-filter').value);
         const playlistPaths = selected ? new Set(selected.songs.map(song => song.path)) : null;
-        const filtered = library.filter(path => (!playlistPaths || playlistPaths.has(path)) && terms.every(term => path.toLocaleLowerCase().includes(term)));
+        const chartFilter = $('chart-filter').value, archiveFilter = $('archive-filter').value;
+        const chartPaths = new Set(ranking);
+        const filtered = library.filter(path => (!playlistPaths || playlistPaths.has(path))
+            && (!chartFilter || chartPaths.has(path) === (chartFilter === 'in'))
+            && (!archiveFilter || archived.has(path) === (archiveFilter === 'in'))
+            && terms.every(term => `${path} ${title(path)} ${metadata[path]?.albumArtist || ''}`.toLocaleLowerCase().includes(term)));
         visiblePaths = filtered;
-        window.filterChartLibrary?.(filtered, [selected?.name, $('search').value.trim()].filter(Boolean).join(' · '));
+        window.filterChartLibrary?.(filtered, [selected?.name, chartFilter && (chartFilter === 'in' ? 'В чарте недели' : 'Не в чарте недели'), archiveFilter && (archiveFilter === 'in' ? 'В архиве' : 'Не в архиве'), $('search').value.trim()].filter(Boolean).join(' · '));
         $('library-count').textContent = `${filtered.length} треков`;
         $('enqueue-filtered').disabled = busy || !filtered.length;
         $('playlist-note').textContent = selected?.error || (selected ? `В плейлисте: ${selected.songs.length}` : '');
@@ -119,6 +174,12 @@
             const row = node('div', undefined, 'trackrow'); draggable(row, path);
             const actions = node('div', undefined, 'actions');
             actions.append(button('＋', `Добавить ${title(path)} в очередь`, () => enqueue([path])), button(ranking.includes(path) ? '✓' : '★', `Добавить ${title(path)} в чарт`, () => add(path), ranking.includes(path)));
+            const archiveButton = button('', `${archived.has(path) ? 'Вернуть из архива' : 'В архив'}: ${title(path)}`, () => toggleArchived(path), archiveBusy);
+            archiveButton.className = 'archive-button';
+            archiveButton.setAttribute('aria-pressed', String(archived.has(path)));
+            archiveButton.innerHTML = '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3h18v5H3zM5 8v13h14V8M10 12h4"/></svg>';
+            actions.append(archiveButton);
+            if (/\.mp3$/i.test(path)) actions.append(button('✎', `Редактировать теги: ${title(path)}`, () => editTags(path)));
             const picker = node('select', undefined, 'playlist-picker');
             picker.setAttribute('aria-label', `Добавить ${title(path)} в плейлист`);
             picker.add(new Option('В плейлист…', ''));
@@ -141,7 +202,7 @@
     }
     function dates() { return Object.keys(state.weeks).sort(); }
     function controls() {
-        for (const id of ['week', 'archive', 'next-week', 'search', 'more', 'playlist-filter', 'reload-library']) $(id).disabled = busy || !state;
+        for (const id of ['week', 'archive', 'next-week', 'search', 'more', 'playlist-filter', 'chart-filter', 'archive-filter', 'reload-library']) $(id).disabled = busy || !state;
         $('save').disabled = busy || !state || (!dirty && !!state.weeks[week]);
         const saveLabel = busy ? 'Сохраняем…' : state && week >= (dates().at(-1) || week) ? 'Сохранить чарт и создать папку' : 'Сохранить изменения недели';
         $('save').title = saveLabel; $('save').setAttribute('aria-label', saveLabel); $('save').setAttribute('aria-busy', String(busy));
@@ -153,6 +214,18 @@
         savedPlaylists.sort((a, b) => collator.compare(a.name, b.name));
         for (const list of savedPlaylists) $('playlist-filter').add(new Option(list.name, list.name));
         $('playlist-filter').value = savedPlaylists.some(list => list.name === selected) ? selected : '';
+    }
+    async function toggleArchived(path) {
+        if (archiveBusy || busy) return;
+        const value = !archived.has(path);
+        archiveBusy = true; renderLibrary();
+        try {
+            const data = await api('archive-set', { path, archived: value });
+            archived = new Set(data.archived);
+            renderRanking(); renderStats();
+            status(`«${title(path)}» ${value ? 'добавлен в архив' : 'возвращён из архива'}.`);
+        } catch (error) { status(error.message, true); }
+        finally { archiveBusy = false; renderLibrary(); }
     }
     async function addToPlaylist(path, existingName) {
         if (playlistBusy || busy) return;
@@ -174,12 +247,14 @@
         } catch (error) { status(error.message, true); }
     }
     async function refreshLibrary() {
-        if (busy) return;
+        if (busy || archiveBusy) return;
         busy = true; controls(); renderLibrary(); status('Обновляем библиотеку…', false, true);
         try {
             if (window.reloadMusicLibrary) await window.reloadMusicLibrary();
             const data = await api('state');
             token = data.token; library = data.songs; available = new Set(library);
+            receiveMetadata(data.metadata);
+            archived = new Set(data.archived || []);
             savedPlaylists = data.playlists || []; onlinePlaylists = data.onlinePlaylists !== false;
             // Preserve the draft and its revision; never overwrite unsaved ranking edits.
             renderPlaylistFilter(); renderStats(); status(`Библиотека обновлена: ${library.length} треков.`);
@@ -326,6 +401,7 @@
     $('save').onclick = save; $('export').onclick = exportFiles;
     $('search').oninput = () => { shown = 100; renderLibrary(); };
     $('playlist-filter').onchange = () => { shown = 100; renderLibrary(); };
+    for (const id of ['chart-filter', 'archive-filter']) $(id).onchange = () => { shown = 100; renderLibrary(); };
     $('reload-library').onclick = refreshLibrary;
     $('enqueue-filtered').onclick = () => enqueue(visiblePaths);
     $('enqueue-chart').onclick = () => enqueue(ranking);
@@ -339,7 +415,7 @@
         $('period').type = yearly ? 'number' : 'month';
         $('period').value = yearly ? year : year + '-01'; renderStats();
     };
-    window.addEventListener('beforeunload', event => { if (dirty || busy || playlistBusy) { event.preventDefault(); event.returnValue = ''; } });
+    window.addEventListener('beforeunload', event => { if (dirty || busy || playlistBusy || archiveBusy || editingPath) { event.preventDefault(); event.returnValue = ''; } });
     window.addEventListener('music-library-ready', () => { if (state) renderLibrary(); fitWorkspace(); });
     window.addEventListener('music-playback-state', () => app.querySelectorAll('[data-play-path]').forEach(syncPlaybackButton));
     window.addEventListener('resize', fitWorkspace);
@@ -358,6 +434,7 @@
     window.findChartLibrary = text => {
         if (!state) return;
         $('playlist-filter').value = ''; $('search').value = text;
+        $('chart-filter').value = ''; $('archive-filter').value = '';
         shown = 100; renderLibrary(); host.scrollIntoView({ behavior: 'smooth', block: 'start' }); $('search').focus({ preventScroll: true });
     };
     controls();
@@ -365,6 +442,8 @@
         try {
             const data = await api('state'); state = data.state; token = data.token;
             library = data.songs; available = new Set(library);
+            receiveMetadata(data.metadata);
+            archived = new Set(data.archived || []);
             savedPlaylists = data.playlists || []; onlinePlaylists = data.onlinePlaylists !== false; renderPlaylistFilter();
             const today = localDate(new Date()); $('period').value = today.slice(0, 7);
             openWeek(monday(today), true); renderStats();

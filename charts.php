@@ -8,6 +8,7 @@ header('Cache-Control: no-store');
 header('X-Content-Type-Options: nosniff');
 const CHART_HEADER = "<?php exit; ?>\n";
 require_once __DIR__ . '/music.playlists.php';
+require_once __DIR__ . '/music.metadata.php';
 
 function fail(string $message, int $status = 400): void {
     http_response_code($status);
@@ -177,7 +178,7 @@ try {
     session_start(['cookie_httponly' => true, 'cookie_samesite' => 'Strict', 'cookie_secure' => !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off']);
     if (!isset($_SESSION['charts_token'])) $_SESSION['charts_token'] = bin2hex(random_bytes(24));
     $token = $_SESSION['charts_token']; session_write_close();
-    if (!in_array($action, ['state', 'save', 'export', 'playlists', 'playlist-add'], true)) fail('Неизвестное действие.', 404);
+    if (!in_array($action, ['state', 'save', 'export', 'playlists', 'playlist-add', 'archive-set', 'tags-read', 'tags-save'], true)) fail('Неизвестное действие.', 404);
     if (!in_array($action, ['state', 'playlists'], true) && ($_SERVER['REQUEST_METHOD'] !== 'POST' || !hash_equals($token, $_SERVER['HTTP_X_CHART_TOKEN'] ?? ''))) fail('Обновите страницу и повторите действие.', 403);
     $playlistDir = localPath($cfg['playlistdir']);
     if ($action === 'playlists' || $action === 'playlist-add') {
@@ -216,6 +217,16 @@ try {
     if (!is_dir($storage) && !mkdir($storage)) throw new RuntimeException('Не удалось создать chart-data. Проверьте права записи.');
     $lock = fopen($storage . '/lock.php', 'c+');
     if (!$lock || !flock($lock, LOCK_EX)) throw new RuntimeException('Не удалось заблокировать историю чартов.');
+    if ($action === 'tags-read' || $action === 'tags-save') {
+        if ((int)($_SERVER['CONTENT_LENGTH'] ?? 0) > 65536) fail('Слишком большой запрос.', 413);
+        $input = json_decode(file_get_contents('php://input'), true, 512, JSON_THROW_ON_ERROR);
+        $path = $input['path'] ?? null;
+        $source = is_string($path) ? songFile($path, $cfg) : null;
+        if (!$source || strtolower(pathinfo($source, PATHINFO_EXTENSION)) !== 'mp3') fail('Выберите MP3 из библиотеки.', 400);
+        if ($action === 'tags-save' && (!is_array($input['tags'] ?? null) || !is_string($input['revision'] ?? null))) fail('Некорректные данные тегов.');
+        echo jsonText($action === 'tags-read' ? mfpMetadata($source) : mfpSaveTags($source, $input['tags'], $input['revision']));
+        flock($lock, LOCK_UN); fclose($lock); exit;
+    }
     $file = $storage . '/history.php';
     $state = ['revision' => 0, 'scoring' => 'reciprocal-100-v1', 'weeks' => []];
     if (is_file($file)) {
@@ -223,11 +234,32 @@ try {
         if (strpos($raw, CHART_HEADER) !== 0) throw new RuntimeException('Повреждён файл истории.');
         $state = json_decode(substr($raw, strlen(CHART_HEADER)), true, 512, JSON_THROW_ON_ERROR);
     }
-    if ($action === 'state') {
+    // Track archive is independent of chart revisions and weekly snapshots.
+    $archiveFile = $storage . '/archive.php';
+    $archived = [];
+    if (is_file($archiveFile)) {
+        $raw = file_get_contents($archiveFile);
+        if (strpos($raw, CHART_HEADER) !== 0) throw new RuntimeException('Повреждён файл архива треков.');
+        $archived = json_decode(substr($raw, strlen(CHART_HEADER)), true, 512, JSON_THROW_ON_ERROR);
+        if (!is_array($archived) || array_values($archived) !== $archived || count(array_filter($archived, 'is_string')) !== count($archived))
+            throw new RuntimeException('Повреждён список архивных треков.');
+    }
+    if ($action === 'archive-set') {
+        if ((int)($_SERVER['CONTENT_LENGTH'] ?? 0) > 2097152) fail('Слишком большой запрос.', 413);
+        $input = json_decode(file_get_contents('php://input'), true, 512, JSON_THROW_ON_ERROR);
+        $path = $input['path'] ?? null;
+        $value = $input['archived'] ?? null;
+        if (!is_string($path) || !is_bool($value)) fail('Некорректный запрос архива.');
+        if (!songFile($path, $cfg) && ($value || !in_array($path, $archived, true))) fail('Композиция не найдена в библиотеке.');
+        $archived = array_values(array_diff($archived, [$path]));
+        if ($value) $archived[] = $path;
+        writeState($archiveFile, $archived);
+        echo jsonText(['archived' => $archived]);
+    } elseif ($action === 'state') {
         $songs = []; $root = realpath(localPath($cfg['root']));
         if ($root && is_dir($root)) scanSongs($root, '', 0, $cfg, $songs);
         natcasesort($songs);
-        echo jsonText(['state' => $state, 'token' => $token, 'songs' => array_values($songs), 'libraryMissing' => !$root, 'root' => $cfg['root'], 'playlists' => mfpListPlaylists($playlistDir), 'onlinePlaylists' => ($ini['client']['onlinepls'] ?? 'true') === 'true']);
+        echo jsonText(['state' => $state, 'metadata' => mfpLibraryMetadata($songs, $cfg), 'archived' => $archived, 'token' => $token, 'songs' => array_values($songs), 'libraryMissing' => !$root, 'root' => $cfg['root'], 'playlists' => mfpListPlaylists($playlistDir), 'onlinePlaylists' => ($ini['client']['onlinepls'] ?? 'true') === 'true']);
     } else {
         if ((int)($_SERVER['CONTENT_LENGTH'] ?? 0) > 2097152) fail('Слишком большой запрос.', 413);
         $input = json_decode(file_get_contents('php://input'), true, 512, JSON_THROW_ON_ERROR);

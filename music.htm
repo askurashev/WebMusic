@@ -119,6 +119,10 @@
     <div class="workspace">
       <section class="panel library"><div class="panelhead"><div class="panel-title"><h2>Библиотека</h2><span id="library-count" class="muted"></span></div><div class="library-icon-actions"><button id="reload-library" class="icon-button" title="Обновить библиотеку" aria-label="Обновить библиотеку"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6 7a7 7 0 0 1 12-1l2 6M4 12l2 6a7 7 0 0 0 12-1" /></svg></button><button id="enqueue-filtered" class="icon-button" title="Добавить весь показанный список в очередь" aria-label="Добавить весь показанный список в очередь"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5h12M3 10h12M3 15h7m8-2v8m-4-4h8" /></svg></button></div></div>
         <div class="library-filters"><input type="search" id="search" placeholder="Поиск по библиотеке" aria-label="Поиск по библиотеке"><select id="playlist-filter" aria-label="Фильтр по плейлисту"><option value="">Вся библиотека</option></select></div>
+        <div class="library-filters">
+          <select id="chart-filter" aria-label="Фильтр по чарту выбранной недели"><option value="">Чарт недели: все треки</option><option value="in">Добавлены в чарт</option><option value="out">Не добавлены в чарт</option></select>
+          <select id="archive-filter" aria-label="Фильтр по архиву треков"><option value="">Архив: все треки</option><option value="in">Только архивные</option><option value="out">Только не в архиве</option></select>
+        </div>
         <span id="playlist-note" class="muted"></span>
 
         <div id="library" class="tracklist"></div><button id="more" hidden>Показать ещё</button>
@@ -134,6 +138,18 @@
       <details class="stats-help"><summary>Как считается</summary><p id="stats-rule" class="hint"></p><p class="hint">Учитываются сохранённые недели по дате их понедельника.</p></details><div class="tablewrap"><table><thead><tr><th>Место</th><th>Композиция</th><th>Баллы</th><th>Недель в чарте</th><th>Лучшее место</th><th>Среднее место</th></tr></thead><tbody id="stats"></tbody></table></div>
     </section>
   </main>
+  <dialog id="tag-editor" aria-labelledby="tag-heading">
+    <form id="tag-form">
+      <h2 id="tag-heading">Теги MP3</h2>
+      <p id="tag-path" class="hint"></p>
+      <label>Исполнитель<input id="tag-artist" autocomplete="off" maxlength="1000"></label>
+      <label>Исполнитель альбома<input id="tag-albumArtist" autocomplete="off" maxlength="1000"></label>
+      <label>Название песни<input id="tag-title" autocomplete="off" maxlength="1000"></label>
+      <p class="hint">Изменения сохраняются в самом MP3. Перед записью создаётся резервная копия. Имя файла сохраняется.</p>
+      <p id="tag-error" role="alert"></p>
+      <div class="tag-buttons"><button type="button" id="tag-cancel">Отмена</button><button type="submit" id="tag-save" class="primary">Сохранить</button></div>
+    </form>
+  </dialog>
 	</template>
 	<div id="dim"></div>
 	<div id="logdiv" class="hide">
