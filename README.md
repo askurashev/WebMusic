@@ -92,6 +92,8 @@ The library and weekly chart sit above the bottom player. Their height adapts to
 
 MP3 titles and artists are read from supported embedded ID3 tags. Empty or unsupported tags fall back to filenames (and the player's configurable `pathexp` naming pattern). Search also includes the artist and album artist.
 
+The library opens before reading embedded tags. Tags load progressively in authenticated batches of at most 25 files, with a one-second processing budget between files per request, so large libraries do not exceed PHP's request timeout. A failed tag batch leaves the library usable with filename labels.
+
 Use the pencil button beside an MP3 in the library to edit **artist, album artist, and song title**. Save writes into the MP3 itself without re-encoding audio or renaming the file; playlists and chart history keep their existing paths. The PHP `iconv` extension and write permission to both the file and its folder are required. No additional runtime or package installation is needed.
 
 The editor supports plain ID3v2.2, v2.3, v2.4, ID3v1-only files, and files without tags. Existing non-edited ID3v2 frames (including artwork) are preserved byte for byte. Existing ID3v1 title/artist fields are synchronized with their legacy length and encoding limits; full Unicode values live in ID3v2. Complex headers (extended headers, tag-level unsynchronisation, compression, footers), specially flagged edited frames, malformed tags, and tags over 16 MB are rejected without changing the original.

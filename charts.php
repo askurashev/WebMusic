@@ -178,9 +178,17 @@ try {
     session_start(['cookie_httponly' => true, 'cookie_samesite' => 'Strict', 'cookie_secure' => !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off']);
     if (!isset($_SESSION['charts_token'])) $_SESSION['charts_token'] = bin2hex(random_bytes(24));
     $token = $_SESSION['charts_token']; session_write_close();
-    if (!in_array($action, ['state', 'save', 'export', 'playlists', 'playlist-add', 'archive-set', 'tags-read', 'tags-save'], true)) fail('Неизвестное действие.', 404);
+    if (!in_array($action, ['state', 'save', 'export', 'playlists', 'playlist-add', 'archive-set', 'tags-read', 'tags-save', 'metadata'], true)) fail('Неизвестное действие.', 404);
     if (!in_array($action, ['state', 'playlists'], true) && ($_SERVER['REQUEST_METHOD'] !== 'POST' || !hash_equals($token, $_SERVER['HTTP_X_CHART_TOKEN'] ?? ''))) fail('Обновите страницу и повторите действие.', 403);
     $playlistDir = localPath($cfg['playlistdir']);
+    if ($action === 'metadata') {
+        if ((int)($_SERVER['CONTENT_LENGTH'] ?? 0) > 65536) fail('Слишком большой запрос.', 413);
+        $input = json_decode(file_get_contents('php://input'), true, 512, JSON_THROW_ON_ERROR);
+        $paths = $input['paths'] ?? null;
+        if (!is_array($paths) || count($paths) > 25 || !$paths || count(array_filter($paths, 'is_string')) !== count($paths)) fail('Некорректный список MP3.');
+        echo jsonText(['metadata' => mfpLibraryMetadata($paths, $cfg)]);
+        exit;
+    }
     if ($action === 'playlists' || $action === 'playlist-add') {
         if (($ini['client']['onlinepls'] ?? 'true') !== 'true') fail('Сохранение плейлистов отключено в настройках.', 403);
         $playlistLock = mfpPlaylistLock($playlistDir);
@@ -259,7 +267,7 @@ try {
         $songs = []; $root = realpath(localPath($cfg['root']));
         if ($root && is_dir($root)) scanSongs($root, '', 0, $cfg, $songs);
         natcasesort($songs);
-        echo jsonText(['state' => $state, 'metadata' => mfpLibraryMetadata($songs, $cfg), 'archived' => $archived, 'token' => $token, 'songs' => array_values($songs), 'libraryMissing' => !$root, 'root' => $cfg['root'], 'playlists' => mfpListPlaylists($playlistDir), 'onlinePlaylists' => ($ini['client']['onlinepls'] ?? 'true') === 'true']);
+        echo jsonText(['state' => $state, 'metadataPending' => true, 'archived' => $archived, 'token' => $token, 'songs' => array_values($songs), 'libraryMissing' => !$root, 'root' => $cfg['root'], 'playlists' => mfpListPlaylists($playlistDir), 'onlinePlaylists' => ($ini['client']['onlinepls'] ?? 'true') === 'true']);
     } else {
         if ((int)($_SERVER['CONTENT_LENGTH'] ?? 0) > 2097152) fail('Слишком большой запрос.', 413);
         $input = json_decode(file_get_contents('php://input'), true, 512, JSON_THROW_ON_ERROR);

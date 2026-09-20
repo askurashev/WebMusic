@@ -12,6 +12,7 @@ let exported = [], confirmResult = true, count = 0;
 let lists = [{ name: 'Favorites', songs: [{ path: a }] }], queued = [];
 let archived = [], archiveError = false;
 let trackTags = { artist: 'Artist', albumArtist: 'Album artist', title: 'Old title' }, tagsError = false;
+let metadataPending = false, metadataFailure = false, releaseMetadata, metadataRequests = [];
 const $ = id => document.getElementById('my-chart').shadowRoot.getElementById(id);
 // Linkedom deliberately omits some native form control behavior.
 const selectPrototype = Object.getPrototypeOf(document.createElement('select'));
@@ -26,7 +27,15 @@ class TestDate extends Date { constructor(...args) { super(...(args.length ? arg
 const fetch = async (url, options) => {
     const action = new URL(url, 'http://localhost/').searchParams.get('action');
     let data;
-    if (action === 'state') data = { state, archived, token: 'test-token', songs: [a, b, c], libraryMissing: false, playlists: lists };
+    if (action === 'state') data = { state, archived, token: 'test-token', songs: [a, b, c], libraryMissing: false, playlists: lists, metadataPending };
+    else if (action === 'metadata') {
+        if (metadataFailure) return { ok: false, status: 500, json: async () => { throw new Error('empty response'); } };
+        const input = JSON.parse(options.body);
+        metadataRequests.push(input.paths);
+        // Return only one file per request, as the server does when its time budget expires.
+        await new Promise(resolve => { releaseMetadata = resolve; });
+        data = { metadata: { [input.paths[0]]: { artist: 'Background artist', albumArtist: '', title: 'Background title' } } };
+    }
     else if (action === 'tags-read') data = { tags: trackTags, revision: 'tag-revision' };
     else if (action === 'tags-save') {
         if (tagsError) throw new Error('File changed');
@@ -207,4 +216,18 @@ check($('library').textContent.includes('<img src=x onerror=alert(1)> Песня
 check(paths().join('|') === draft, 'tag editing preserves unsaved chart draft');
 $('search').value = 'Новый исполнитель'; $('search').oninput();
 check(libraryPaths().join() === a, 'search matches corrected artist');
+$('search').value = ''; $('search').oninput();
+metadataPending = true;
+await click($('reload-library'));
+check(!$('reload-library').disabled && libraryPaths().length === 3 && metadataRequests.length === 1, 'library usable while metadata request is pending');
+releaseMetadata(); await tick();
+check(window.musicMetadata[a].artist === 'Новый исполнитель', 'background tags cannot overwrite newly saved edits');
+check(metadataRequests[1].join('|') === [b, c].join('|'), 'partial metadata batch resumes at first unprocessed track');
+releaseMetadata(); await tick();
+check($('library').textContent.includes('Background artist'), 'background tags update track labels');
+releaseMetadata(); await tick();
+check(metadataRequests.length === 3 && paths().join('|') === draft, 'background loading finishes and preserves chart draft');
+metadataFailure = true;
+await click($('reload-library')); await tick();
+check(libraryPaths().length === 3 && $('status').textContent.includes('HTTP 500') && !$('status').textContent.includes('локальный HTML'), 'bad metadata response leaves library usable and reports server error accurately');
 console.log(`${count} UI assertions passed.`);

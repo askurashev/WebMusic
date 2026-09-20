@@ -9,6 +9,8 @@
     let dragged = null, lastExport = null;
     let archived = new Set(), archiveBusy = false;
     let metadata = {}, editingPath = null, editingRevision = '', tagBusy = false;
+    let metadataGeneration = 0;
+    const editedMetadata = new Set();
     let savedPlaylists = [], onlinePlaylists = true, playlistBusy = false, visiblePaths = [];
     const collator = new Intl.Collator('ru', { numeric: true, sensitivity: 'base' });
     const localDate = date => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
@@ -52,6 +54,25 @@
         window.musicMetadata = metadata;
         window.refreshMusicMetadata?.();
     }
+    async function loadMetadata() {
+        const generation = ++metadataGeneration;
+        const paths = library.filter(path => /\.mp3$/i.test(path));
+        let index = 0;
+        try {
+            while (index < paths.length && generation === metadataGeneration) {
+                const result = await api('metadata', { paths: paths.slice(index, index + 25) });
+                if (generation !== metadataGeneration) return;
+                const entries = Object.entries(result.metadata || {});
+                if (!entries.length) break;
+                for (const [path, tags] of entries) if (!editedMetadata.has(path)) metadata[path] = tags;
+                index += entries.length;
+                receiveMetadata(metadata);
+                renderLibrary(); renderRanking(); renderStats();
+            }
+        } catch (error) {
+            if (generation === metadataGeneration) status('Библиотека загружена, но теги загрузить не удалось: ' + error.message, true);
+        }
+    }
     async function editTags(path) {
         if (tagBusy || editingPath) return;
         editingPath = path; tagBusy = true;
@@ -81,6 +102,7 @@
         for (const field of ['artist', 'albumArtist', 'title']) $('tag-' + field).disabled = true;
         try {
             const result = await api('tags-save', { path: editingPath, tags, revision: editingRevision });
+            editedMetadata.add(editingPath);
             metadata[editingPath] = result.tags; receiveMetadata(metadata);
             renderLibrary(); renderRanking(); renderStats();
             $('tag-editor').close(); status('Теги сохранены в MP3. Резервная копия создана.');
@@ -135,7 +157,11 @@
             method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Chart-Token': token }, body: JSON.stringify(body)
         });
         let result;
-        try { result = await response.json(); } catch (_) { throw new Error('Сервер не вернул данные. Откройте страницу через PHP-сервер, а не как локальный HTML-файл.'); }
+        try { result = await response.json(); } catch (_) {
+            throw new Error(window.location?.protocol === 'file:'
+                ? 'Откройте страницу через PHP-сервер, а не как локальный HTML-файл.'
+                : `Сервер вернул некорректный ответ (HTTP ${response.status}). Повторите действие; подробности — в журнале PHP.`);
+        }
         if (!response.ok || result.error) throw new Error(result.error || 'Ошибка сервера.');
         return result;
     }
@@ -248,16 +274,18 @@
     }
     async function refreshLibrary() {
         if (busy || archiveBusy) return;
+        metadataGeneration++;
         busy = true; controls(); renderLibrary(); status('Обновляем библиотеку…', false, true);
         try {
             if (window.reloadMusicLibrary) await window.reloadMusicLibrary();
             const data = await api('state');
             token = data.token; library = data.songs; available = new Set(library);
-            receiveMetadata(data.metadata);
+            receiveMetadata(data.metadata || metadata);
             archived = new Set(data.archived || []);
             savedPlaylists = data.playlists || []; onlinePlaylists = data.onlinePlaylists !== false;
             // Preserve the draft and its revision; never overwrite unsaved ranking edits.
             renderPlaylistFilter(); renderStats(); status(`Библиотека обновлена: ${library.length} треков.`);
+            if (data.metadataPending) void loadMetadata();
         } catch (error) { status(error.message, true); }
         finally { busy = false; renderRanking(); renderLibrary(); }
     }
@@ -448,6 +476,7 @@
             const today = localDate(new Date()); $('period').value = today.slice(0, 7);
             openWeek(monday(today), true); renderStats();
             status(data.libraryMissing ? `Папка музыки «${data.root}» не найдена. Настройте root в music.ini и обновите страницу.` : '', data.libraryMissing);
+            if (data.metadataPending) void loadMetadata();
         } catch (error) { status(error.message, true); controls(); }
     })();
 })();

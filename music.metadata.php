@@ -82,11 +82,14 @@ function mfpMetadata(string $file): array {
     return ['tags'=>$read['tags'], 'revision'=>hash_file('sha256', $file)];
 }
 function mfpLibraryMetadata(array $songs, array $cfg): array {
-    $result = [];
+    $result = []; $started = microtime(true);
     foreach ($songs as $path) {
-        if (strtolower(pathinfo($path, PATHINFO_EXTENSION)) !== 'mp3') continue;
-        try { $result[$path] = mfpReadTags(songFile($path, $cfg))['tags']; }
+        if (!is_string($path) || strtolower(pathinfo($path, PATHINFO_EXTENSION)) !== 'mp3') continue;
+        $result[$path] = null;
+        try { $file = songFile($path, $cfg); if ($file) $result[$path] = mfpReadTags($file)['tags']; }
         catch (Throwable $e) { /* A bad tag must not prevent the library from loading. */ }
+        // Bound each request, including cold filesystem reads on large libraries.
+        if (microtime(true) - $started >= 1) break;
     }
     return $result;
 }

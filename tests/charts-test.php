@@ -47,7 +47,11 @@ try {
     [$tagCode, $tagResult] = request('tags-save', $tagInput);
     check($tagCode === 200 && $tagResult['tags'] === $tagValues, 'write and read Unicode MP3 tags');
     check(request('tags-save', $tagInput)[0] === 500, 'reject stale file revision');
-    check(request('state')[1]['metadata'][$a] === $tagValues, 'library reads saved metadata from MP3');
+    check(request('state')[1]['metadataPending'] === true, 'library state defers tag reads');
+    check(request('metadata', ['paths'=>[$a]])[1]['metadata'][$a] === $tagValues, 'metadata batch reads saved tags');
+    check(request('metadata', ['paths'=>[$a]], false)[0] === 403, 'metadata batch requires token');
+    check(request('metadata', ['paths'=>array_fill(0, 26, $a)])[0] === 400, 'metadata batch size is bounded');
+    check(request('metadata', ['paths'=>['../outside.mp3']])[1]['metadata']['../outside.mp3'] === null, 'metadata batch cannot read outside library');
     $backups = glob($fixture . '/chart-data/tag-backups/*.php');
     check(count($backups) === 1 && substr(file_get_contents($backups[0]), 15) === $originalAudio, 'backup contains exact original bytes');
     check(file_get_contents('http://' . $address . '/chart-data/tag-backups/' . basename($backups[0])) === '', 'backup is protected from direct HTTP reads');
