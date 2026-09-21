@@ -290,7 +290,15 @@
         for (const path of filtered.slice(0, shown)) {
             const row = node('div', undefined, 'trackrow'); draggable(row, path);
             const actions = node('div', undefined, 'actions');
-            actions.append(button('＋', `Добавить ${title(path)} в очередь`, () => enqueue([path])), button(ranking.includes(path) ? '✓' : '★', `Добавить ${title(path)} в чарт`, () => add(path), ranking.includes(path)));
+            const chartButton = button('★', `${chartPaths.has(path) ? 'Убрать из чарта' : 'Добавить в чарт'}: ${title(path)}`, () => {
+                if (busy) return;
+                const index = ranking.indexOf(path);
+                if (index < 0) add(path);
+                else { ranking.splice(index, 1); changed(); }
+            });
+            chartButton.className = 'chart-button';
+            chartButton.setAttribute('aria-pressed', String(chartPaths.has(path)));
+            actions.append(button('＋', `Добавить ${title(path)} в очередь`, () => enqueue([path])), chartButton);
             const archiveButton = button('', `${archived.has(path) ? 'Вернуть из архива' : 'В архив'}: ${title(path)}`, () => toggleArchived(path), archiveBusy);
             archiveButton.className = 'archive-button';
             archiveButton.setAttribute('aria-pressed', String(archived.has(path)));
@@ -312,7 +320,7 @@
     }
     function dates() { return Object.keys(state.weeks).sort(); }
     function controls() {
-        for (const id of ['week', 'archive', 'next-week', 'search', 'more', 'playlist-filter', 'chart-filter', 'archive-filter', 'reload-library']) $(id).disabled = busy || !state;
+        for (const id of ['week', 'archive', 'next-week', 'search', 'more', 'playlist-filter', 'chart-filter', 'archive-filter', 'reload-library', 'auto-save']) $(id).disabled = busy || !state;
         $('save').disabled = busy || !state || (!dirty && !!state.weeks[week]);
         const saveLabel = 'Сохранить плейлист';
         $('save').title = saveLabel; $('save').setAttribute('aria-label', saveLabel); $('save').setAttribute('aria-busy', String(busy));
@@ -406,12 +414,18 @@
         $('ranking').replaceChildren(fragment); controls();
     }
     function changed() {
-        dirty = true; $('week-note').textContent = 'Изменения будут сохранены автоматически…';
+        dirty = true; showSaveNote();
         scheduleSave();
         $('export-result').replaceChildren(); renderRanking(); renderLibrary();
     }
+    function showSaveNote() {
+        $('week-note').textContent = $('auto-save').checked
+            ? 'Изменения будут сохранены автоматически…'
+            : 'Есть несохранённые изменения. Нажмите «Сохранить плейлист».';
+    }
     function scheduleSave() {
         window.clearTimeout(saveTimer);
+        if (!$('auto-save').checked) return;
         saveTimer = window.setTimeout(() => {
             if (busy) scheduleSave();
             else if (dirty) void save();
@@ -467,7 +481,7 @@
         const preceding = dates().filter(date => date < week).at(-1);
         ranking = [...(existing ? existing.songs : preceding ? state.weeks[preceding].songs : [])];
         dirty = !existing;
-        $('week-note').textContent = existing ? `Сохранённый чарт · ${week}` : preceding ? `Новая неделя: скопирован чарт от ${preceding}. Изменения сохраняются автоматически.` : 'Новый чарт. Добавьте композиции — плейлист сохранится автоматически.';
+        $('week-note').textContent = existing ? `Сохранённый чарт · ${week}` : preceding ? `Новая неделя: скопирован чарт от ${preceding}.` : 'Новый чарт. Добавьте любимые композиции.';
         $('export-result').replaceChildren(); renderArchive(); renderRanking(); renderLibrary();
     }
     function renderStats() {
@@ -529,6 +543,10 @@
     $('archive').onchange = () => { if ($('archive').value) openWeek($('archive').value); };
     $('next-week').onclick = () => openWeek(shiftWeek(week, 7));
     $('save').onclick = save; $('export').onclick = exportFiles;
+    $('auto-save').onchange = () => {
+        window.clearTimeout(saveTimer);
+        if (dirty) { showSaveNote(); scheduleSave(); }
+    };
     $('search').oninput = () => { shown = 100; renderLibrary(); };
     $('playlist-filter').onclick = () => openPlaylistMenu($('playlist-filter'));
     $('playlist-filter').setAttribute('aria-controls', 'playlist-menu');

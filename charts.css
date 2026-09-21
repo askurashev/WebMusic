@@ -27,6 +27,8 @@ label input, label select { font-size: 1.15em; }
 #status .toast-dismiss:hover { color: var(--text); }
 .weekbar { display: flex; align-items: flex-end; flex-wrap: wrap; gap: .6em; margin-bottom: .75em; }
 .chart-heading-actions, .library-icon-actions { display: flex; flex: 0 0 auto; align-items: center; gap: .4em; margin-left: auto; }
+.auto-save { flex-direction: row; align-items: center; gap: .25em; cursor: pointer; white-space: nowrap; }
+.auto-save input { margin: 0; accent-color: var(--focus); }
 .panel-title { display: flex; align-items: baseline; flex-wrap: wrap; gap: .6em; min-width: 0; }
 .panel-title .muted { white-space: nowrap; }
 .icon-button { display: inline-flex; align-items: center; justify-content: center; width: 2.4em; height: 2.4em; padding: .35em; }
@@ -54,7 +56,8 @@ label input, label select { font-size: 1.15em; }
 .playlist-tag { font-size: 11px; color: var(--focus); border: 1px solid var(--focus-dim); border-radius: .45em; padding: 0 .45em; line-height: 1.4; overflow-wrap: anywhere; }
 .archive-tag { font-size: 11px; color: var(--text-dim); border: 1px solid var(--border); border-radius: .45em; padding: 0 .45em; line-height: 1.4; }
 .archive-button { display: inline-flex; align-items: center; justify-content: center; }
-.archive-button[aria-pressed=true] { color: var(--focus); border-color: var(--focus-dim); background: var(--bg-button-hv); }
+.chart-button { color: var(--text-dim); }
+.chart-button[aria-pressed=true], .archive-button[aria-pressed=true] { color: var(--focus); border-color: var(--focus-dim); background: var(--bg-button-hv); }
 .format-tag, .missing-tag { color: var(--text-dim); font-size: 10px; letter-spacing: .04em; }
 .missing-tag { color: #d96555; }
 .trackrow button { padding: .25em .45em; flex-shrink: 0; }
