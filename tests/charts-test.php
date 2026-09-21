@@ -4,6 +4,22 @@ declare(strict_types=1);
 $fixture = sys_get_temp_dir() . '/webmusic-charts-test-' . bin2hex(random_bytes(8));
 mkdir($fixture);
 foreach (['charts.php', 'music.defaults.ini', 'music.playlists.php', 'music.metadata.php', 'music.php', 'music.lang.en.ini'] as $file) copy(dirname(__DIR__) . '/' . $file, $fixture . '/' . $file);
+// Observe disk usage order and simulate a partial copy failure only in the isolated server.
+$endpoint = file_get_contents($fixture . '/charts.php');
+$copyProbe = <<<'PHP'
+function testExportCopy(string $source, string $destination): bool {
+    if (file_exists(__DIR__ . '/chart-exports/current')) throw new RuntimeException('Old export still exists during copy.');
+    if (is_file(__DIR__ . '/fail-copy')) {
+        file_put_contents($destination, 'partial');
+        return false;
+    }
+    return copy($source, $destination);
+}
+
+PHP;
+$endpoint = str_replace('function exportChart(', $copyProbe . 'function exportChart(', $endpoint);
+$endpoint = str_replace('copy($source, $stage', 'testExportCopy($source, $stage', $endpoint);
+file_put_contents($fixture . '/charts.php', $endpoint);
 mkdir($fixture . '/library'); mkdir($fixture . '/library/Альбом'); mkdir($fixture . '/library/Другой');
 $a = 'Альбом/Одна песня.mp3'; $b = 'Другой/Одна песня.mp3'; $c = 'Третья.flac';
 foreach ([$a => 'first-audio-bytes', $b => 'second-audio-bytes', $c => 'third-audio-bytes'] as $path => $bytes) file_put_contents($fixture . '/library/' . $path, $bytes);
@@ -48,7 +64,7 @@ try {
     check($tagCode === 200 && $tagResult['tags'] === $tagValues, 'write and read Unicode MP3 tags');
     check(request('tags-save', $tagInput)[0] === 500, 'reject stale file revision');
     check(request('state')[1]['metadataPending'] === true, 'library state defers tag reads');
-    check(request('metadata', ['paths'=>[$a]])[1]['metadata'][$a] === $tagValues, 'metadata batch reads saved tags');
+    check(request('metadata', ['paths'=>[$a]])[1]['metadata'][$a] === array_merge($tagValues, ['duration' => null, 'year' => null]), 'metadata batch reads saved tags');
     check(request('metadata', ['paths'=>[$a]], false)[0] === 403, 'metadata batch requires token');
     check(request('metadata', ['paths'=>array_fill(0, 26, $a)])[0] === 400, 'metadata batch size is bounded');
     check(request('metadata', ['paths'=>['../outside.mp3']])[1]['metadata']['../outside.mp3'] === null, 'metadata batch cannot read outside library');
@@ -87,6 +103,12 @@ try {
     request('playlist-add', ['name' => 'Position', 'path' => $b]);
     $withPosition = json_decode(json_decode(file_get_contents($fixture . '/music.pls/Position.mfp.json')), true);
     check($withPosition['index'] === 0 && count($withPosition['playlist']) === 2, 'append preserves stock saved-position format');
+    check(request('playlist-remove', ['name' => 'Position', 'path' => $a], false)[0] === 403, 'playlist removal requires session token');
+    check(request('playlist-remove', ['name' => 'Position', 'path' => $a])[0] === 200, 'remove selected playlist membership');
+    $removed = json_decode(json_decode(file_get_contents($fixture . '/music.pls/Position.mfp.json'), true), true);
+    check(array_column($removed['playlist'], 'path') === [$b] && $removed['index'] === 0, 'removal preserves other songs and saved position');
+    check(request('playlist-remove', ['name' => 'Position', 'path' => $a])[0] === 200, 'removing absent membership is idempotent');
+
     $legacyBody = json_encode(['name' => 'Legacy save', 'songs' => json_encode([['path' => $c]])]);
     $legacyContext = stream_context_create(['http' => ['method' => 'POST', 'header' => 'Content-Type: application/json', 'content' => $legacyBody]]);
     check(file_get_contents('http://' . $address . '/music.php', false, $legacyContext) === '', 'stock save returns successful empty response');
@@ -111,6 +133,13 @@ try {
     check(!is_file($out . '/002 - Одна песня.mp3') || file_get_contents($out . '/002 - Одна песня.mp3') === 'first-audio-bytes', 'removed entry is no longer in exported chart');
     check(count(glob($out . '/*.mp3')) === 1 && count(glob($out . '/*.flac')) === 1, 'export contains exact current membership');
     check(is_file($fixture . '/library/' . $b), 'originals are never removed');
+    file_put_contents($fixture . '/fail-copy', '1');
+    check(request('export', ['week' => '2026-09-14', 'revision' => 2])[0] === 500, 'partial copy failure is reported');
+    clearstatcache();
+    check(!file_exists($out) && glob($fixture . '/chart-exports/.building-*') === [] && glob($fixture . '/chart-exports/.previous-*') === [], 'failed export leaves no old or partial audio copies');
+    check(request('state')[1]['state']['revision'] === 2, 'copy failure preserves saved chart history');
+    unlink($fixture . '/fail-copy');
+    check(request('export', ['week' => '2026-09-14', 'revision' => 2])[0] === 200, 'export can be retried after copy failure');
     file_put_contents($out . '/my-notes.txt', 'keep me');
     check(request('export', ['week' => '2026-09-14', 'revision' => 2])[0] === 500 && file_get_contents($out . '/my-notes.txt') === 'keep me', 'refuse to overwrite foreign files');
     unlink($out . '/my-notes.txt');

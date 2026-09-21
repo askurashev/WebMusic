@@ -95,3 +95,14 @@ td:first-child { color: var(--focus); }
     .weekbar > input, .weekbar > select { flex: 1 1 10em; }
     .library-filters { grid-template-columns: minmax(0, 1fr); }
 }
+
+#playlist-filter { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+.playlist-menu { position: fixed; inset: auto; margin: 0; z-index: 1100; width: min(292px, calc(100vw - 16px)); max-height: min(320px, calc(100vh - 16px)); overflow: auto; padding: .4em; background: var(--bg-popup); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: 0 4px 20px var(--box-shadow); }
+.playlist-choice { flex-direction: row; align-items: center; gap: .6em; padding: .55em; color: var(--text); font-size: .9em; cursor: pointer; border-radius: var(--radius); }
+.playlist-choice:hover { background: var(--bg-button-hv); }
+.playlist-choice:has(input:checked) { color: var(--focus); }
+.playlist-choice input { width: 16px; height: 16px; flex-shrink: 0; margin: 0; accent-color: var(--focus); }
+.playlist-choice span { overflow-wrap: anywhere; min-width: 0; }
+.playlist-menu > button { width: 100%; margin-top: .3em; text-align: left; }
+
+.track-details { font-size: 11px; color: var(--text-dim); white-space: nowrap; margin-right: .3em; font-variant-numeric: tabular-nums; }

@@ -10,7 +10,7 @@ let state = { revision: 0, scoring: 'reciprocal-100-v1', weeks: {
 } };
 let exported = [], confirmResult = true, count = 0;
 let lists = [{ name: 'Favorites', songs: [{ path: a }] }], queued = [];
-let archived = [], archiveError = false;
+let archived = [], archiveError = false, playlistError = false;
 let trackTags = { artist: 'Artist', albumArtist: 'Album artist', title: 'Old title' }, tagsError = false;
 let metadataPending = false, metadataFailure = false, releaseMetadata, metadataRequests = [];
 const $ = id => document.getElementById('my-chart').shadowRoot.getElementById(id);
@@ -27,7 +27,7 @@ class TestDate extends Date { constructor(...args) { super(...(args.length ? arg
 const fetch = async (url, options) => {
     const action = new URL(url, 'http://localhost/').searchParams.get('action');
     let data;
-    if (action === 'state') data = { state, archived, token: 'test-token', songs: [a, b, c], libraryMissing: false, playlists: lists, metadataPending };
+    if (action === 'state') data = { state, archived, token: 'test-token', songs: [a, b, c], libraryMissing: false, playlists: lists, metadata: metadataPending ? undefined : { [a]: { duration: 222, year: "2021" }, [b]: { duration: 3665, year: "1998" } }, metadataPending };
     else if (action === 'metadata') {
         if (metadataFailure) return { ok: false, status: 500, json: async () => { throw new Error('empty response'); } };
         const input = JSON.parse(options.body);
@@ -49,11 +49,13 @@ const fetch = async (url, options) => {
         if (input.archived) archived.push(input.path);
         data = { archived };
     }
-    else if (action === 'playlist-add') {
+    else if (action === 'playlist-add' || action === 'playlist-remove') {
+        if (playlistError) throw new Error('Playlist unavailable');
         const input = JSON.parse(options.body);
         let list = lists.find(list => list.name === input.name);
         if (!list) { list = { name: input.name, songs: [] }; lists.push(list); }
-        list.songs.push({ path: input.path }); data = { playlists: lists };
+        if (action === 'playlist-remove') list.songs = list.songs.filter(song => song.path !== input.path);
+        else if (!list.songs.some(song => song.path === input.path)) list.songs.push({ path: input.path }); data = { playlists: lists };
     }
     else {
         const input = JSON.parse(options.body);
@@ -154,31 +156,60 @@ check(paths().join('|') === [b, c, a].join('|'), 'drag existing rank to the end'
 check(document.getElementById('library').hidden, 'duplicate stock library is not displayed');
 check(document.getElementById('player').contains(document.getElementById('playlistdiv')) && document.getElementById('playlistdiv').hidden, 'queue is collapsed inside docked player');
 check(document.getElementById('player').contains(document.getElementById('options')), 'stock tools are inside docked player');
-$('playlist-filter').value = 'Favorites'; $('playlist-filter').onchange();
+const menuChoice = name => [...$('playlist-menu').querySelectorAll('input')].find(input => input.dataset.name === name);
+const choose = async (name, checked) => { const input = menuChoice(name); input.checked = checked; await input.onchange(); };
+const setPlaylistFilter = name => {
+    click($('playlist-filter'));
+    menuChoice('Вся библиотека').onchange();
+    if (name) { const input = menuChoice(name); input.checked = true; input.onchange(); }
+    click($('playlist-filter'));
+};
+setPlaylistFilter('Favorites');
 check($('library').children.length === 1 && $('library').querySelector('.info').dataset.path === a, 'filter library by saved playlist');
 window.queueChartSongs = paths => { queued = [...paths]; return paths.length; };
 click($('enqueue-filtered'));
 check(queued.join() === a, 'enqueue all adds only filtered playlist songs');
 $('search').value = 'no-match'; $('search').oninput();
 check($('enqueue-filtered').disabled, 'search intersects playlist filter');
-$('search').value = ''; $('playlist-filter').value = ''; $('playlist-filter').onchange();
-let picker = [...$('library').children].find(row => row.querySelector('.info')?.dataset.path === b).querySelector('select');
-picker.value = 'p:0'; await picker.onchange();
-check(lists[0].songs.some(song => song.path === b), 'per-track dropdown appends to selected playlist');
-picker = [...$('library').children].find(row => row.querySelector('.info')?.dataset.path === c).querySelector('select');
-picker.value = 'new'; await picker.onchange();
+$('search').value = ''; setPlaylistFilter('');
+const trackPicker = path => [...$('library').children].find(row => row.querySelector('.info')?.dataset.path === path).querySelector('.playlist-picker');
+click(trackPicker(b));
+await choose('Favorites', true);
+check(lists[0].songs.some(song => song.path === b) && menuChoice('Favorites').checked && !$('playlist-menu').hidden, 'checkbox adds membership and keeps menu open');
+click(trackPicker(b));
+click(trackPicker(c));
+await click($('playlist-menu').querySelector('button'));
 check(lists.find(list => list.name === 'New playlist').songs[0].path === c, 'per-track dropdown creates a new playlist');
+await choose('Favorites', true);
+check(menuChoice('Favorites').checked && menuChoice('New playlist').checked, 'track can belong to multiple checked playlists');
+playlistError = true; await choose('Favorites', false);
+check(menuChoice('Favorites').checked && !menuChoice('Favorites').disabled, 'failed membership update restores checkbox and allows retry');
+playlistError = false;
+
+check(trackPicker(c).closest('.trackrow').querySelectorAll('.playlist-tag').length === 2, 'all membership badges update while menu stays open');
+await choose('Favorites', false);
+check(!menuChoice('Favorites').checked && menuChoice('New playlist').checked, 'unchecking removes only selected membership');
+click(trackPicker(c));
+click($('playlist-filter'));
+await choose('Favorites', true); await choose('New playlist', true);
+check($('library').querySelectorAll('.info').length === 3, 'multiple playlist filter shows union without duplicates');
+await choose('Favorites', false);
+check($('library').querySelectorAll('.info').length === 1 && $('library').querySelector('.info').dataset.path === c, 'deselecting playlist updates filter');
+await choose('Вся библиотека', true); click($('playlist-filter'));
 check(paths().join('|') === [b, c, a].join('|'), 'playlist editing preserves chart draft');
 click($('enqueue-chart'));
 check(queued.join('|') === paths().join('|'), 'enqueue whole chart preserves ranking order');
 check($('library').querySelector('.playlist-tag').textContent === 'Favorites', 'playlist membership appears as a tag');
 check(!$('library').querySelector('.path') && !$('library').textContent.includes('Artist A/'), 'file path is hidden from secondary text');
 check($('library').querySelector('.info').title === a, 'full path remains available as tooltip');
-check($('library').querySelector('.format-tag').textContent === 'MP3', 'format shown as compact metadata');
+check(!$('library').querySelector('.format-tag') && $('library').querySelector('.track-details').textContent === '3:42 · 2021', 'library shows duration and year instead of MP3');
+check($('library').querySelector('.track-meta').firstElementChild.className === 'track-details', 'duration and year precede playlist badges');
+check(trackPicker(b).closest('.trackrow').querySelector('.track-details').textContent === '1:01:05 · 1998', 'long durations show hours');
+check(trackPicker(c).closest('.trackrow').querySelector('.track-details').textContent === '—:— · год не указан', 'missing metadata is not invented');
 $('period').value = '2026'; $('period').oninput();
 check($('ranking').querySelector('.playlist-tag') && $('stats').querySelector('.playlist-tag'), 'playlist tags update in rankings and totals');
 const libraryPaths = () => [...$('library').querySelectorAll('.info')].map(el => el.dataset.path);
-const filter = (id, value) => { $(id).value = value; $(id).onchange(); };
+const filter = (id, value) => { if (id === 'playlist-filter') return setPlaylistFilter(value); $(id).value = value; $(id).onchange(); };
 filter('chart-filter', 'out');
 check(libraryPaths().length === 0, 'chart filter includes unsaved additions');
 click($('ranking').children[0].querySelector('.actions button:last-child'));
@@ -222,6 +253,7 @@ await $('tag-form').onsubmit({ preventDefault() {} });
 check(!$('tag-editor').open && window.musicMetadata[a].artist === 'Новый исполнитель', 'successful tag save closes dialog and updates shared metadata');
 check($('library').textContent.includes('<img src=x onerror=alert(1)> Песня') && !$('library').querySelector('img'), 'tag text cannot inject HTML');
 check(paths().join('|') === draft, 'tag editing preserves unsaved chart draft');
+check($('library').querySelector('.track-details').textContent === '3:42 · 2021', 'editing title preserves duration and year');
 await click($('library').querySelector('.copy-title-button'));
 check(copiedText === 'Новый исполнитель — <img src=x onerror=alert(1)> Песня', 'copy uses current artist and title as plain text');
 $('search').value = 'Новый исполнитель'; $('search').oninput();
@@ -234,10 +266,10 @@ releaseMetadata(); await tick();
 check(window.musicMetadata[a].artist === 'Новый исполнитель', 'background tags cannot overwrite newly saved edits');
 check(metadataRequests[1].join('|') === [b, c].join('|'), 'partial metadata batch resumes at first unprocessed track');
 const openPicker = $('library').querySelector('.playlist-picker');
-openPicker.onfocus();
+click(openPicker);
 releaseMetadata(); await tick();
 check($('library').querySelector('.playlist-picker') === openPicker && openPicker.isConnected, 'background tags preserve focused playlist dropdown');
-openPicker.onblur(); await tick();
+click(openPicker); await tick();
 check($('library').textContent.includes('Background artist'), 'background tags update track labels');
 releaseMetadata(); await tick();
 check(metadataRequests.length === 3 && paths().join('|') === draft, 'background loading finishes and preserves chart draft');

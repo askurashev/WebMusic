@@ -77,16 +77,68 @@ function mfpReadTags(string $file): array {
         return ['tags'=>$tags, 'version'=>$version, 'offset'=>$offset, 'frames'=>$frames, 'v1'=>$v1];
     } finally { fclose($stream); }
 }
+// Display-only metadata never participates in the three-field tag editor.
+function mfpTrackDetails(string $file, array $read): array {
+    $values = [];
+    foreach ($read['frames'] as $frame) {
+        if (!in_array($frame['id'], ['TYE', 'TYER', 'TDRC', 'TDRL', 'TLE', 'TLEN'], true)) continue;
+        $head = $read['version'] === 2 ? 6 : 10;
+        if ($head === 10 && substr($frame['raw'], 8, 2) !== "\0\0") continue;
+        try { $values[$frame['id']] = mfpTagText(substr($frame['raw'], $head)); }
+        catch (Throwable $e) { /* Ignore malformed optional display fields. */ }
+    }
+    $year = null;
+    foreach (['TDRL', 'TDRC', 'TYER', 'TYE'] as $id) {
+        if (preg_match('/^([1-9][0-9]{3})(?:$|[-T\s])/', $values[$id] ?? '', $match)) { $year = $match[1]; break; }
+    }
+    if ($year === null && preg_match('/^[1-9][0-9]{3}$/D', substr($read['v1'], 93, 4))) $year = substr($read['v1'], 93, 4);
+    // ID3 TLEN/TLE stores milliseconds: https://id3.org/id3v2.4.0-frames
+    $length = $values['TLEN'] ?? $values['TLE'] ?? '';
+    $duration = ctype_digit($length) && is_finite((float)$length) && (float)$length > 0 ? (float)$length / 1000 : null;
+    if ($duration === null) $duration = mfpMp3Duration($file, $read['offset'], strlen($read['v1']));
+    return ['duration' => $duration, 'year' => $year];
+}
+function mfpMp3Duration(string $file, int $offset, int $tail): ?float {
+    $stream = fopen($file, 'rb');
+    if (!$stream) return null;
+    try {
+        $end = fstat($stream)['size'] - $tail;
+        $position = $offset; $duration = 0.0; $frames = 0;
+        // Count MPEG Layer III samples, including changing bitrates (VBR).
+        // Header layout: https://samples.ffmpeg.org/A-codecs/sf/mpeg_header.html
+        while ($position + 4 <= $end) {
+            fseek($stream, $position); $header = fread($stream, 4);
+            if (strlen($header) < 4) break;
+            $bits = unpack('N', $header)[1];
+            $version = ($bits >> 19) & 3; $layer = ($bits >> 17) & 3;
+            $rateIndex = ($bits >> 12) & 15; $sampleIndex = ($bits >> 10) & 3;
+            if (($bits & 0xffe00000) !== 0xffe00000 || $version === 1 || $layer !== 1 || $rateIndex === 0 || $rateIndex === 15 || $sampleIndex === 3) {
+                if ($frames || $position - $offset >= 65536) break;
+                $position++; continue;
+            }
+            $rates = $version === 3 ? [0,32,40,48,56,64,80,96,112,128,160,192,224,256,320] : [0,8,16,24,32,40,48,56,64,80,96,112,128,144,160];
+            $sampleRate = [44100,48000,32000][$sampleIndex] / ($version === 3 ? 1 : ($version === 2 ? 2 : 4));
+            $samples = $version === 3 ? 1152 : 576;
+            $size = (int)floor(($samples / 8) * $rates[$rateIndex] * 1000 / $sampleRate) + (($bits >> 9) & 1);
+            if ($position + $size > $end) break;
+            $duration += $samples / $sampleRate; $frames++; $position += $size;
+        }
+        return $frames >= 2 ? $duration : null;
+    } finally { fclose($stream); }
+}
 function mfpMetadata(string $file): array {
     $read = mfpReadTags($file);
-    return ['tags'=>$read['tags'], 'revision'=>hash_file('sha256', $file)];
+    return ['tags'=>$read['tags'], 'details'=>mfpTrackDetails($file, $read), 'revision'=>hash_file('sha256', $file)];
 }
 function mfpLibraryMetadata(array $songs, array $cfg): array {
     $result = []; $started = microtime(true);
     foreach ($songs as $path) {
         if (!is_string($path) || strtolower(pathinfo($path, PATHINFO_EXTENSION)) !== 'mp3') continue;
         $result[$path] = null;
-        try { $file = songFile($path, $cfg); if ($file) $result[$path] = mfpReadTags($file)['tags']; }
+        try {
+            $file = songFile($path, $cfg);
+            if ($file) { $read = mfpReadTags($file); $result[$path] = array_merge($read['tags'], mfpTrackDetails($file, $read)); }
+        }
         catch (Throwable $e) { /* A bad tag must not prevent the library from loading. */ }
         // Bound each request, including cold filesystem reads on large libraries.
         if (microtime(true) - $started >= 1) break;

@@ -13,6 +13,71 @@
     const editedMetadata = new Set();
     let savedPlaylists = [], onlinePlaylists = true, playlistBusy = false, visiblePaths = [];
     let focusedPlaylistPicker = null, libraryRenderPending = false;
+    const selectedPlaylists = new Set();
+    let menuAnchor = null, menuPath = null;
+    const playlistMenu = node('div', undefined, 'playlist-menu');
+    playlistMenu.id = 'playlist-menu'; playlistMenu.hidden = true; playlistMenu.setAttribute('role', 'group');
+    playlistMenu.setAttribute('popover', 'manual'); app.append(playlistMenu);
+    function closePlaylistMenu(restoreFocus = false, flush = true) {
+        if (!menuAnchor) return;
+        const anchor = menuAnchor;
+        playlistMenu.hidePopover?.(); playlistMenu.hidden = true;
+        anchor.setAttribute('aria-expanded', 'false');
+        menuAnchor = null; focusedPlaylistPicker = null;
+        const path = menuPath;
+        if (flush && libraryRenderPending) renderLibrary();
+        if (restoreFocus) {
+            const target = anchor.isConnected ? anchor : [...$('library').querySelectorAll('.trackrow')].find(row => row.querySelector('.info')?.dataset.path === path)?.querySelector('.playlist-picker');
+            (target || $('playlist-filter')).focus();
+        }
+    }
+    function fillPlaylistMenu() {
+        const path = menuPath;
+        playlistMenu.replaceChildren();
+        function choice(name, checked, change, disabled = false) {
+            const label = node('label', undefined, 'playlist-choice');
+            const input = node('input'); input.type = 'checkbox'; input.checked = checked;
+            input.disabled = disabled; input.dataset.name = name; input.onchange = () => change(input);
+            label.append(input, node('span', name)); playlistMenu.append(label);
+        }
+        function updateFilter() {
+            const inputs = [...playlistMenu.querySelectorAll('input')];
+            inputs.forEach((input, index) => input.checked = index === 0 ? !selectedPlaylists.size : selectedPlaylists.has(input.dataset.name));
+            renderPlaylistFilter(); shown = 100; renderLibrary();
+        }
+        if (path === null) choice('Вся библиотека', !selectedPlaylists.size, () => { selectedPlaylists.clear(); updateFilter(); });
+        for (const list of savedPlaylists) choice(list.name,
+            path === null ? selectedPlaylists.has(list.name) : list.songs.some(song => song.path === path),
+            input => {
+                if (path !== null) return addToPlaylist(path, list.name, input.checked);
+                if (input.checked) selectedPlaylists.add(list.name); else selectedPlaylists.delete(list.name);
+                updateFilter();
+            }, !!list.error || (path !== null && (busy || playlistBusy || !onlinePlaylists)));
+        if (path !== null) playlistMenu.append(button('＋ Создать новый…', 'Создать новый плейлист', () => addToPlaylist(path, null), playlistBusy || !onlinePlaylists));
+        else if (!savedPlaylists.length) playlistMenu.append(node('p', 'Сохранённых плейлистов пока нет.', 'muted'));
+    }
+    function openPlaylistMenu(anchor, path = null) {
+        if (menuAnchor === anchor) { closePlaylistMenu(); return; }
+        closePlaylistMenu(false, false); menuAnchor = anchor; menuPath = path;
+        if (path !== null) focusedPlaylistPicker = anchor;
+        anchor.setAttribute('aria-expanded', 'true');
+        playlistMenu.setAttribute('aria-label', path === null ? 'Фильтр по плейлистам' : `Плейлисты: ${title(path)}`);
+        fillPlaylistMenu(); playlistMenu.hidden = false; playlistMenu.showPopover?.();
+        const rect = anchor.getBoundingClientRect?.() || { left: 0, bottom: 0 };
+        playlistMenu.style.left = Math.max(8, Math.min(rect.left, (window.innerWidth || 1024) - 300)) + 'px';
+        playlistMenu.style.top = Math.max(8, Math.min(rect.bottom + 4, (window.innerHeight || 768) - (playlistMenu.offsetHeight || 280) - 8)) + 'px';
+        playlistMenu.querySelector('input, button')?.focus();
+    }
+    app.addEventListener('click', event => {
+        if (menuAnchor && !playlistMenu.contains(event.target) && event.target !== menuAnchor) closePlaylistMenu();
+    });
+    document.addEventListener('pointerdown', event => { if (!event.composedPath().includes(host)) closePlaylistMenu(); });
+    app.addEventListener('keydown', event => {
+        if (!menuAnchor) return;
+        event.stopPropagation();
+        if (event.key === 'Escape') { event.preventDefault(); closePlaylistMenu(true); }
+    });
+    window.addEventListener('resize', () => closePlaylistMenu());
     const collator = new Intl.Collator('ru', { numeric: true, sensitivity: 'base' });
     const localDate = date => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
     function monday(value) {
@@ -112,7 +177,7 @@
         try {
             const result = await api('tags-save', { path: editingPath, tags, revision: editingRevision });
             editedMetadata.add(editingPath);
-            metadata[editingPath] = result.tags; receiveMetadata(metadata);
+            metadata[editingPath] = { ...metadata[editingPath], ...result.tags, ...result.details }; receiveMetadata(metadata);
             renderLibrary(); renderRanking(); renderStats();
             $('tag-editor').close(); status('Теги сохранены в MP3. Резервная копия создана.');
         } catch (error) { $('tag-error').textContent = error.message; }
@@ -121,15 +186,29 @@
             for (const field of ['artist', 'albumArtist', 'title']) $('tag-' + field).disabled = false;
         }
     };
-    function info(path) {
+    function durationLabel(value) {
+        if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return '—:—';
+        const seconds = Math.round(value);
+        const hours = Math.floor(seconds / 3600), minutes = Math.floor(seconds / 60) % 60;
+        return (hours ? `${hours}:${String(minutes).padStart(2, '0')}` : String(minutes)) + ':' + String(seconds % 60).padStart(2, '0');
+    }
+    function info(path, libraryRow = false) {
         const el = node('div', undefined, 'info');
         el.dataset.path = path; el.title = path;
         const tags = node('div', undefined, 'track-meta');
+        if (libraryRow) {
+            const details = metadata[path];
+            const year = /^[1-9][0-9]{3}$/.test(String(details?.year)) ? details.year : 'год не указан';
+            const duration = durationLabel(details?.duration);
+            const summary = node('span', `${duration} · ${year}`, 'track-details');
+            summary.title = `Длительность: ${duration}; год выпуска: ${year}`;
+            tags.append(summary);
+        }
         if (archived.has(path)) tags.append(node('span', 'В архиве', 'archive-tag'));
         for (const list of savedPlaylists) {
             if (list.songs.some(song => song.path === path)) tags.append(node('span', list.name, 'playlist-tag'));
         }
-        tags.append(node('span', path.split('.').pop().toUpperCase(), 'format-tag'));
+        if (!libraryRow) tags.append(node('span', path.split('.').pop().toUpperCase(), 'format-tag'));
         if (!available.has(path)) tags.append(node('span', 'Файл недоступен', 'missing-tag'));
         el.append(node('span', title(path), 'title'), tags);
         return el;
@@ -190,12 +269,12 @@
         row.addEventListener('dragend', () => { dragged = null; clearDrop(); });
     }
     function renderLibrary() {
-        // Replacing a focused native select closes its popup, including during tag loading.
+        // Preserve the open track menu while choosing several playlists.
         if (focusedPlaylistPicker?.isConnected) { libraryRenderPending = true; return; }
         libraryRenderPending = false;
         const terms = $('search').value.toLocaleLowerCase().trim().split(/\s+/).filter(Boolean);
-        const selected = savedPlaylists.find(list => list.name === $('playlist-filter').value);
-        const playlistPaths = selected ? new Set(selected.songs.map(song => song.path)) : null;
+        const selected = savedPlaylists.filter(list => selectedPlaylists.has(list.name));
+        const playlistPaths = selected.length ? new Set(selected.flatMap(list => list.songs.map(song => song.path))) : null;
         const chartFilter = $('chart-filter').value, archiveFilter = $('archive-filter').value;
         const chartPaths = new Set(ranking);
         const filtered = library.filter(path => (!playlistPaths || playlistPaths.has(path))
@@ -203,10 +282,10 @@
             && (!archiveFilter || archived.has(path) === (archiveFilter === 'in'))
             && terms.every(term => `${path} ${title(path)} ${metadata[path]?.albumArtist || ''}`.toLocaleLowerCase().includes(term)));
         visiblePaths = filtered;
-        window.filterChartLibrary?.(filtered, [selected?.name, chartFilter && (chartFilter === 'in' ? 'В чарте недели' : 'Не в чарте недели'), archiveFilter && (archiveFilter === 'in' ? 'В архиве' : 'Не в архиве'), $('search').value.trim()].filter(Boolean).join(' · '));
+        window.filterChartLibrary?.(filtered, [selected.map(list => list.name).join(', '), chartFilter && (chartFilter === 'in' ? 'В чарте недели' : 'Не в чарте недели'), archiveFilter && (archiveFilter === 'in' ? 'В архиве' : 'Не в архиве'), $('search').value.trim()].filter(Boolean).join(' · '));
         $('library-count').textContent = `${filtered.length} треков`;
         $('enqueue-filtered').disabled = busy || !filtered.length;
-        $('playlist-note').textContent = selected?.error || (selected ? `В плейлисте: ${selected.songs.length}` : '');
+        $('playlist-note').textContent = selected.map(list => list.error).filter(Boolean).join('; ') || (selected.length ? `Плейлистов: ${selected.length} · Треков: ${playlistPaths.size}` : '');
         const fragment = document.createDocumentFragment();
         for (const path of filtered.slice(0, shown)) {
             const row = node('div', undefined, 'trackrow'); draggable(row, path);
@@ -222,30 +301,10 @@
             copyButton.innerHTML = '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="13" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h3"/></svg>';
             actions.append(copyButton);
             if (/\.mp3$/i.test(path)) actions.append(button('✎', `Редактировать теги: ${title(path)}`, () => editTags(path)));
-            const picker = node('select', undefined, 'playlist-picker');
-            picker.setAttribute('aria-label', `Добавить ${title(path)} в плейлист`);
-            picker.add(new Option('В плейлист…', ''));
-            savedPlaylists.forEach((list, index) => {
-                const included = list.songs.some(song => song.path === path);
-                const option = new Option((included ? '✓ ' : '') + list.name, `p:${index}`);
-                option.disabled = included || !!list.error; picker.add(option);
-            });
-            picker.add(new Option('＋ Создать новый…', 'new'));
-            picker.disabled = busy || playlistBusy || !onlinePlaylists;
-            picker.onfocus = () => { focusedPlaylistPicker = picker; };
-            picker.onpointerdown = picker.onkeydown = picker.onfocus;
-            picker.onblur = () => {
-                if (focusedPlaylistPicker === picker) focusedPlaylistPicker = null;
-                // Let a click on another row action finish before replacing its target.
-                window.setTimeout(() => { if (libraryRenderPending) renderLibrary(); }, 0);
-            };
-            picker.onchange = () => {
-                focusedPlaylistPicker = null;
-                window.setTimeout(() => { if (libraryRenderPending) renderLibrary(); }, 0);
-                const value = picker.value; picker.value = '';
-                if (value) return addToPlaylist(path, value === 'new' ? null : savedPlaylists[Number(value.slice(2))].name);
-            };
-            row.append(playButton(path), info(path), actions, picker);
+            const picker = button('В плейлист… ▾', `Плейлисты: ${title(path)}`, () => openPlaylistMenu(picker, path), playlistBusy || !onlinePlaylists);
+            picker.className = 'playlist-picker'; picker.setAttribute('aria-expanded', 'false');
+            picker.setAttribute('aria-controls', 'playlist-menu');
+            row.append(playButton(path), info(path, true), actions, picker);
             fragment.append(row);
         }
         if (!filtered.length) fragment.append(node('p', library.length ? 'Ничего не найдено.' : 'В библиотеке пока нет музыки.', 'empty'));
@@ -260,12 +319,12 @@
         $('export').disabled = busy || !state || dirty || !state.weeks[week] || week !== dates().at(-1);
     }
     function renderPlaylistFilter() {
-        const selected = $('playlist-filter').value;
-        $('playlist-filter').replaceChildren(new Option('Вся библиотека', ''));
         savedPlaylists.sort((a, b) => collator.compare(a.name, b.name));
-        for (const list of savedPlaylists) $('playlist-filter').add(new Option(list.name, list.name));
-        $('playlist-filter').value = savedPlaylists.some(list => list.name === selected) ? selected : '';
+        for (const name of selectedPlaylists) if (!savedPlaylists.some(list => list.name === name)) selectedPlaylists.delete(name);
+        const label = selectedPlaylists.size ? [...selectedPlaylists].join(', ') : 'Вся библиотека';
+        $('playlist-filter').textContent = label + ' ▾'; $('playlist-filter').title = label;
     }
+
     async function toggleArchived(path) {
         if (archiveBusy || busy) return;
         const value = !archived.has(path);
@@ -278,17 +337,27 @@
         } catch (error) { status(error.message, true); }
         finally { archiveBusy = false; renderLibrary(); }
     }
-    async function addToPlaylist(path, existingName) {
+    async function addToPlaylist(path, existingName, included = true) {
         if (playlistBusy || busy) return;
         const name = existingName ?? prompt('Название нового плейлиста:');
         if (!name || !name.trim()) return;
+        const focusedName = app.activeElement?.dataset.name;
         playlistBusy = true; renderLibrary();
+        playlistMenu.querySelectorAll('input, button').forEach(el => el.disabled = true);
         try {
-            const data = await api('playlist-add', { name: name.trim(), path, create: existingName === null });
+            const data = await api(included ? 'playlist-add' : 'playlist-remove', { name: name.trim(), path, create: existingName === null });
             savedPlaylists = data.playlists; renderPlaylistFilter(); renderRanking(); renderStats();
-            status(`«${title(path)}» добавлен в плейлист «${name.trim()}».`);
+            status(`«${title(path)}» ${included ? 'добавлен в плейлист' : 'удалён из плейлиста'} «${name.trim()}».`);
         } catch (error) { status(error.message, true); }
-        finally { playlistBusy = false; renderLibrary(); }
+        finally {
+            playlistBusy = false;
+            if (menuAnchor) {
+                fillPlaylistMenu();
+                [...playlistMenu.querySelectorAll('input')].find(input => input.dataset.name === focusedName)?.focus();
+                app.querySelectorAll('.info').forEach(el => { if (el.dataset.path === path) el.replaceWith(info(path, !!el.closest('#library'))); });
+            }
+            renderLibrary();
+        }
     }
     function enqueue(paths) {
         try {
@@ -453,7 +522,8 @@
     $('next-week').onclick = () => openWeek(shiftWeek(week, 7));
     $('save').onclick = save; $('export').onclick = exportFiles;
     $('search').oninput = () => { shown = 100; renderLibrary(); };
-    $('playlist-filter').onchange = () => { shown = 100; renderLibrary(); };
+    $('playlist-filter').onclick = () => openPlaylistMenu($('playlist-filter'));
+    $('playlist-filter').setAttribute('aria-controls', 'playlist-menu');
     for (const id of ['chart-filter', 'archive-filter']) $(id).onchange = () => { shown = 100; renderLibrary(); };
     $('reload-library').onclick = refreshLibrary;
     $('enqueue-filtered').onclick = () => enqueue(visiblePaths);
@@ -481,12 +551,12 @@
     document.fonts?.ready.then(fitWorkspace);
     fitWorkspace();
     window.addEventListener('music-playlists-changed', async () => {
-        try { savedPlaylists = (await api('playlists')).playlists; renderPlaylistFilter(); renderLibrary(); renderRanking(); renderStats(); }
+        try { savedPlaylists = (await api('playlists')).playlists; renderPlaylistFilter(); if (menuAnchor) fillPlaylistMenu(); renderLibrary(); renderRanking(); renderStats(); }
         catch (error) { status(error.message, true); }
     });
     window.findChartLibrary = text => {
         if (!state) return;
-        $('playlist-filter').value = ''; $('search').value = text;
+        closePlaylistMenu(); selectedPlaylists.clear(); renderPlaylistFilter(); $('search').value = text;
         $('chart-filter').value = ''; $('archive-filter').value = '';
         shown = 100; renderLibrary(); host.scrollIntoView({ behavior: 'smooth', block: 'start' }); $('search').focus({ preventScroll: true });
     };
