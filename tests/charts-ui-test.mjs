@@ -8,7 +8,7 @@ const a = 'Artist A/Song A.mp3', b = 'Artist B/Song B.mp3', c = '<script>/Song C
 let state = { revision: 0, scoring: 'reciprocal-100-v1', weeks: {
     '2026-09-07': { songs: [a, b] }, '2026-09-14': { songs: [b, a] }
 } };
-let exported = [], confirmResult = true, count = 0;
+let exported = [], confirmResult = true, count = 0, saveError = false;
 let lists = [{ name: 'Favorites', songs: [{ path: a }] }], queued = [];
 let archived = [], archiveError = false, playlistError = false;
 let trackTags = { artist: 'Artist', albumArtist: 'Album artist', title: 'Old title' }, tagsError = false;
@@ -60,6 +60,7 @@ const fetch = async (url, options) => {
     else {
         const input = JSON.parse(options.body);
         if (input.revision !== state.revision) throw new Error('stale revision');
+        if (action === 'save' && saveError) throw new Error('Save unavailable');
         if (action === 'save') { state.weeks[input.week] = { songs: input.songs }; state.revision++; data = { state }; }
         else { exported.push(input.week); data = { export: { count: state.weeks[input.week].songs.length, path: 'test/current' } }; }
     }
@@ -119,7 +120,9 @@ click($('ranking').children[1].querySelector('.actions button'));
 check(paths().join('|') === [a, b].join('|'), 'move track with keyboard-accessible button');
 check($('export').disabled, 'unsaved ranking cannot be exported');
 await click($('save'));
-check(exported.join() === '2026-09-14', 'saving latest chart automatically exports audio');
+check(exported.length === 0, 'saving playlist does not export audio');
+await click($('export'));
+check(exported.join() === '2026-09-14', 'explicit copy button exports audio');
 click($('next-week'));
 check($('week').value === '2026-09-21' && paths().join('|') === [a, b].join('|'), 'next week inherits preceding chart');
 click($('ranking').children[1].querySelector('.actions button:last-child'));
@@ -135,7 +138,7 @@ check(summary[1].name.includes(b) && summary[2].name.includes(c), 'equal points 
 $('archive').value = '2026-09-07'; $('archive').onchange();
 click($('ranking').children[0].querySelectorAll('.actions button')[1]);
 await click($('save'));
-check(exported.length === 2, 'editing archive does not overwrite current export');
+check(exported.length === 1, 'editing archive does not overwrite current export');
 $('period-kind').value = 'year'; $('period-kind').onchange();
 check($('period').value === '2026' && $('stats').children.length === 3, 'yearly summary');
 $('period').value = '2025'; $('period').oninput();
@@ -153,6 +156,19 @@ dragToEnd([...$('library').children].find(row => row.querySelector('.info')?.dat
 check(paths().at(-1) === c && paths().length === 3, 'drag library track into chart');
 dragToEnd($('ranking').children[0]);
 check(paths().join('|') === [b, c, a].join('|'), 'drag existing rank to the end');
+const revisionBeforeAutoSave = state.revision;
+await new Promise(resolve => setTimeout(resolve, 550));
+check(state.weeks['2026-09-07'].songs.join('|') === [b, c, a].join('|') && state.revision === revisionBeforeAutoSave + 1, 'drag edits autosave together without confirmation');
+check(exported.length === 1 && $('save').disabled, 'autosave does not copy audio and clears dirty state');
+saveError = true;
+click($('ranking').children[1].querySelector('.actions button'));
+await new Promise(resolve => setTimeout(resolve, 550));
+check(!$('save').disabled && $('week-note').textContent.includes('не сохранён'), 'failed autosave keeps edits available for retry');
+saveError = false;
+await click($('save'));
+check($('save').disabled && state.weeks['2026-09-07'].songs.join('|') === paths().join('|'), 'manual retry saves retained edits without copying');
+click($('ranking').children[1].querySelector('.actions button'));
+await click($('save'));
 check(document.getElementById('library').hidden, 'duplicate stock library is not displayed');
 check(document.getElementById('player').contains(document.getElementById('playlistdiv')) && document.getElementById('playlistdiv').hidden, 'queue is collapsed inside docked player');
 check(document.getElementById('player').contains(document.getElementById('options')), 'stock tools are inside docked player');
@@ -259,6 +275,7 @@ check(copiedText === 'Новый исполнитель — <img src=x onerror=a
 $('search').value = 'Новый исполнитель'; $('search').oninput();
 check(libraryPaths().join() === a, 'search matches corrected artist');
 $('search').value = ''; $('search').oninput();
+await click($('save'));
 metadataPending = true;
 await click($('reload-library'));
 check(!$('reload-library').disabled && libraryPaths().length === 3 && metadataRequests.length === 1, 'library usable while metadata request is pending');

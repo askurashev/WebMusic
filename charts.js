@@ -6,7 +6,7 @@
     app.append(document.getElementById('my-chart-template').content.cloneNode(true));
     const $ = id => app.getElementById(id);
     let state, token, library = [], available = new Set(), ranking = [], week, dirty = false, busy = false, shown = 100;
-    let dragged = null, lastExport = null;
+    let dragged = null, lastExport = null, saveTimer;
     let archived = new Set(), archiveBusy = false;
     let metadata = {}, editingPath = null, editingRevision = '', tagBusy = false;
     let metadataGeneration = 0;
@@ -314,7 +314,7 @@
     function controls() {
         for (const id of ['week', 'archive', 'next-week', 'search', 'more', 'playlist-filter', 'chart-filter', 'archive-filter', 'reload-library']) $(id).disabled = busy || !state;
         $('save').disabled = busy || !state || (!dirty && !!state.weeks[week]);
-        const saveLabel = busy ? 'Сохраняем…' : state && week >= (dates().at(-1) || week) ? 'Сохранить чарт и создать папку' : 'Сохранить изменения недели';
+        const saveLabel = 'Сохранить плейлист';
         $('save').title = saveLabel; $('save').setAttribute('aria-label', saveLabel); $('save').setAttribute('aria-busy', String(busy));
         $('export').disabled = busy || !state || dirty || !state.weeks[week] || week !== dates().at(-1);
     }
@@ -406,8 +406,16 @@
         $('ranking').replaceChildren(fragment); controls();
     }
     function changed() {
-        dirty = true; $('week-note').textContent = 'Есть несохранённые изменения.';
+        dirty = true; $('week-note').textContent = 'Изменения будут сохранены автоматически…';
+        scheduleSave();
         $('export-result').replaceChildren(); renderRanking(); renderLibrary();
+    }
+    function scheduleSave() {
+        window.clearTimeout(saveTimer);
+        saveTimer = window.setTimeout(() => {
+            if (busy) scheduleSave();
+            else if (dirty) void save();
+        }, 500);
     }
     function add(path, at = ranking.length) {
         if (busy || !available.has(path) || ranking.includes(path)) return;
@@ -453,12 +461,13 @@
         if (!next) return;
         if (!force && next === week) { $('week').value = week; return; }
         if (!force && dirty && !confirm('Перейти к другой неделе без сохранения текущих изменений?')) { $('week').value = week; renderArchive(); return; }
+        window.clearTimeout(saveTimer);
         week = next; $('week').value = week;
         const existing = state.weeks[week];
         const preceding = dates().filter(date => date < week).at(-1);
         ranking = [...(existing ? existing.songs : preceding ? state.weeks[preceding].songs : [])];
         dirty = !existing;
-        $('week-note').textContent = existing ? `Сохранённый чарт · ${week}` : preceding ? `Новая неделя: скопирован чарт от ${preceding}. Измените места и сохраните.` : 'Новый чарт. Добавьте любимые композиции.';
+        $('week-note').textContent = existing ? `Сохранённый чарт · ${week}` : preceding ? `Новая неделя: скопирован чарт от ${preceding}. Изменения сохраняются автоматически.` : 'Новый чарт. Добавьте композиции — плейлист сохранится автоматически.';
         $('export-result').replaceChildren(); renderArchive(); renderRanking(); renderLibrary();
     }
     function renderStats() {
@@ -487,20 +496,19 @@
         $('stats-rule').textContent = `100 ÷ место за каждую неделю. Баллы суммируются без промежуточного округления. При равенстве: больше недель, лучшее место, среднее место, ранний дебют. Сохранённых недель в периоде: ${weeks}.`;
     }
     async function save() {
-        if (busy) return;
-        if (state.weeks[week] && !confirm(`Обновить сохранённый чарт от ${week}? Итоги месяца и года будут пересчитаны.`)) return;
+        if (busy || !dirty) return;
+        window.clearTimeout(saveTimer);
         busy = true; renderRanking(); renderLibrary(); status('Сохраняем чарт…', false, true);
         try {
             const result = await api('save', { week, songs: ranking, revision: state.revision });
             state = result.state; dirty = false; lastExport = null;
             $('week-note').textContent = `Сохранённый чарт · ${week}`;
             renderArchive(); renderStats();
-            if (week === dates().at(-1)) {
-                status('Чарт сохранён. Копируем аудиофайлы для телефона…', false, true);
-                try { showExport((await api('export', { week, revision: state.revision })).export); }
-                catch (error) { status('Чарт сохранён, но папка не обновлена: ' + error.message, true); }
-            } else status('Чарт сохранён. Итоги пересчитаны.');
-        } catch (error) { status(error.message, true); }
+            status('Плейлист сохранён.');
+        } catch (error) {
+            $('week-note').textContent = 'Плейлист не сохранён. Нажмите «Сохранить плейлист», чтобы повторить.';
+            status(error.message, true);
+        }
         finally { busy = false; renderRanking(); renderLibrary(); }
     }
     async function exportFiles() {
