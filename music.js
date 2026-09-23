@@ -38,6 +38,44 @@ const
 	REM =  0,
 	SET =  2;
 
+// My Chart uses the existing queue and audio controls, without a second player.
+window.getMusicPlaybackState = function() {
+	const active = audio && audio[track];
+	return { path: active && active.path, playing: !!(active && active.path && !active.paused && !active.ended && !active.error) };
+};
+function notifyPlayback() {
+	window.dispatchEvent(new Event('music-playback-state'));
+}
+window.playChartSong = function(path) {
+	if (!audio || !dom) throw new Error('Плеер ещё загружается.');
+	if (cfg.locked) throw new Error('Снимите блокировку верхнего плеера для выбора композиции.');
+	if (audio[track].path === path && !audio[track].ended && !audio[track].error) {
+		if (audio[track].paused) start(audio[track]);
+		else audio[track].pause();
+		return;
+	}
+	const song = songs.findIndex(function(item) { return item.path === path });
+	if (song < 0) throw new Error('Трек не найден в плеере. Обновите библиотеку или страницу.');
+	let index = cfg.playlist.findIndex(function(item) { return item.path === path });
+	if (index < 0) {
+		add(song);
+		index = cfg.playlist.findIndex(function(item) { return item.path === path });
+	}
+	if (index < 0) throw new Error('Не удалось добавить трек в очередь плеера.');
+	play(index);
+};
+
+window.queueChartSongs = function(paths) {
+	if (!audio || !dom) throw new Error('Плеер ещё загружается.');
+	const before = cfg.playlist.length;
+	for (const path of paths) {
+		const id = songs.findIndex(function(item) { return item.path === path });
+		if (id >= 0) add(id);
+	}
+	return cfg.playlist.length - before;
+};
+
+
 function init() {
 	if (window.location.protocol === 'file:') {
 		const message = document.createElement('p');
@@ -1049,43 +1087,6 @@ function play(id) {
 	playNext();
 }
 
-// My Chart uses the existing queue and audio controls, without a second player.
-window.getMusicPlaybackState = function() {
-	const active = audio && audio[track];
-	return { path: active && active.path, playing: !!(active && active.path && !active.paused && !active.ended && !active.error) };
-};
-function notifyPlayback() {
-	window.dispatchEvent(new Event('music-playback-state'));
-}
-window.playChartSong = function(path) {
-	if (!audio || !dom) throw new Error('Плеер ещё загружается.');
-	if (cfg.locked) throw new Error('Снимите блокировку верхнего плеера для выбора композиции.');
-	if (audio[track].path === path && !audio[track].ended && !audio[track].error) {
-		if (audio[track].paused) start(audio[track]);
-		else audio[track].pause();
-		return;
-	}
-	const song = songs.findIndex(function(item) { return item.path === path });
-	if (song < 0) throw new Error('Трек не найден в плеере. Обновите библиотеку или страницу.');
-	let index = cfg.playlist.findIndex(function(item) { return item.path === path });
-	if (index < 0) {
-		add(song);
-		index = cfg.playlist.findIndex(function(item) { return item.path === path });
-	}
-	if (index < 0) throw new Error('Не удалось добавить трек в очередь плеера.');
-	play(index);
-};
-
-window.queueChartSongs = function(paths) {
-	if (!audio || !dom) throw new Error('Плеер ещё загружается.');
-	const before = cfg.playlist.length;
-	for (const path of paths) {
-		const id = songs.findIndex(function(item) { return item.path === path });
-		if (id >= 0) add(id);
-	}
-	return cfg.playlist.length - before;
-};
-
 var chartLibraryFilter = null;
 window.filterChartLibrary = function(paths, label) {
 	chartLibraryFilter = label ? new Set(paths) : null;
@@ -1376,7 +1377,7 @@ function playNext(ended = false) {
 	start(a);
 
 	const path = cfg.playlist[cfg.index].path,
-		nfo = getSongInfo(path),
+		nfo = getSongInfo(path);
 	var cover = cfg.playlist[cfg.index].cover;
 	cover = cover ? esc(root + path.substring(0, path.lastIndexOf('/') + 1) + cover) : def.cover;
 	dom.album.textContent = getAlbumInfo(nfo);
