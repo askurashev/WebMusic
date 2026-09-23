@@ -208,7 +208,7 @@ Minimal example:
 [server]
 root = library
 playlistdir = music.pls
-cache = 0
+cache = 1
 
 [client]
 pagetitle = 'My Music'
@@ -225,7 +225,7 @@ Client values are emitted as JavaScript expressions: use **single quotes around 
 | --- | --- | --- |
 | `root` | `library` | Music directory, relative to the project directory. |
 | `playlistdir` | `music.pls` | Directory containing saved playlists and the optional library cache. |
-| `cache` | `0` | Disable library caching; a nonzero value enables it. Use Reload Library after changing files when caching is enabled. |
+| `cache` | `1` | Cache the scanned folder structure for faster startup; use Reload Library after changing files. |
 | `maxdepth` | `10` | Maximum recursive directory depth. |
 | `ext_images` | `jpg,png` | Comma-separated cover image extensions. |
 | `ext_songs` | See Requirements | Comma-separated recognized audio extensions, without leading dots. |

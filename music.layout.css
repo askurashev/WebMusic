@@ -12,6 +12,14 @@ body { padding-bottom: 170px; }
 #player-main > #cover { flex-shrink: 0; min-width: 4em; max-width: 4em; min-height: 4em; max-height: 4em; object-fit: cover; }
 #player-main > #current { flex: 1; }
 #player #controls { flex-wrap: wrap; gap: .2em; }
+#player #current-actions { display: flex; align-items: center; gap: .25em; max-width: 100%; margin: .15em 0; overflow: visible; }
+#player #current-actions button { flex: 0 0 auto; min-width: 2em; height: 1.9em; padding: .1em .45em; border: 1px solid transparent; border-radius: var(--radius); background: transparent; color: var(--text-dim); font-size: .82em; line-height: 1; }
+#player #current-actions button:hover:not(:disabled), #player #current-actions button[aria-pressed="true"] { color: var(--focus); border-color: var(--focus-dim); background: var(--bg-button-hv); }
+#player #current-actions button:disabled { opacity: .35; }
+#player #current-actions #player-playlist-toggle { border-color: var(--border); }
+#player #progress { display: flex; align-items: center; gap: .5em; width: 100%; white-space: nowrap; overflow: visible; }
+#player #time { flex: 0 0 auto; font-size: .78em; }
+#player #seek { flex: 1 1 auto; width: 100%; max-width: none; min-width: 3em; margin: 0; padding: 0; }
 #player-actions { display: flex; flex: 0 0 auto; align-items: center; gap: .35em; margin-left: auto; padding-left: 1em; }
 #player-actions .drawer-toggle { display: inline-flex; align-items: center; justify-content: center; gap: .3em; width: auto; height: 2.5em; min-width: 2.5em; padding: .4em; border: 1px solid var(--border); white-space: nowrap; }
 #player-actions .drawer-toggle[aria-expanded="true"] { color: var(--focus); border-color: var(--focus-dim); }
@@ -60,6 +68,10 @@ body.dim #player { z-index: 1; }
     #player:not(.fix) #cover { min-width: 3em; min-height: 3em; max-width: 3em; max-height: 3em; }
     #player:not(.fix) #current { flex: 1; width: 0 !important; }
     #player:not(.fix) #seek { width: min(80%, 18em); padding: 0; }
+    #player:not(.fix) #progress { display: flex; width: 100% !important; max-width: 100%; text-align: left; }
+    #player:not(.fix) #seek { width: 100%; max-width: none; }
+    #player:not(.fix) #current-actions { display: flex; width: 100% !important; justify-content: flex-start; text-align: left; flex-wrap: nowrap; margin: .1em 0; }
+    #player:not(.fix) #current-actions button { font-size: .76em; }
     #player #controls { justify-content: center; }
     #player-actions { padding-left: .35em; flex-direction: column; }
     #my-chart { margin: 1em .5em; }

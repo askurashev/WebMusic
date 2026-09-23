@@ -20,8 +20,13 @@
 		<div id="current">
 			<div id="album" class="title dim" onclick="setFilter(event)"></div>
 			<div id="title" class="title dim" onclick="setFilter(event)"></div>
-			<div id="time">00:00</div>
-			<input id="seek" type="range" min="0" max="1" value="0" step="any" onchange="seek('c')" oninput="seek('i')" onpointerdown="onSeek=true" onpointerup="onSeek=false" onpointercancel="onSeek=false" disabled>
+			<div id="current-actions" aria-label="Действия с текущим треком">
+				<button id="player-chart-toggle" type="button" title="Добавить текущий трек в чарт недели" aria-label="Добавить текущий трек в чарт недели" disabled>☆</button>
+				<button id="player-archive-toggle" type="button" title="Архивировать текущий трек" aria-label="Архивировать текущий трек" disabled>▣</button>
+				<button id="player-playlist-toggle" type="button" title="Добавить текущий трек в плейлист" aria-label="Плейлисты текущего трека" aria-expanded="false" disabled>＋ Плейлист</button>
+				<button id="player-edit-tags" type="button" title="Редактировать теги трека" aria-label="Редактировать теги трека" disabled>✎</button>
+			</div>
+			<div id="progress"><span id="time">00:00</span><input id="seek" type="range" min="0" max="1" value="0" step="any" onchange="seek('c')" oninput="seek('i')" onpointerdown="onSeek=true" onpointerup="onSeek=false" onpointercancel="onSeek=false" disabled></div>
 			<div id="controls" class="toolbar">
 				<button id="volume" onclick="toggle(event)" accesskey="u" oncontextmenu="mute(event)" contextkey="m"></button>
 				<input id="volumeslider" type="range" min="0" step=".05" onchange="setVolume(event)" oninput="setVolume(event)">
@@ -119,6 +124,7 @@
     <div class="workspace">
       <section class="panel library"><div class="panelhead"><div class="panel-title"><h2>Библиотека</h2><span id="library-count" class="muted"></span></div><div class="library-icon-actions"><button id="reload-library" class="icon-button" title="Обновить библиотеку" aria-label="Обновить библиотеку"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6 7a7 7 0 0 1 12-1l2 6M4 12l2 6a7 7 0 0 0 12-1" /></svg></button><button id="enqueue-filtered" class="icon-button" title="Добавить весь показанный список в очередь" aria-label="Добавить весь показанный список в очередь"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5h12M3 10h12M3 15h7m8-2v8m-4-4h8" /></svg></button></div></div>
         <div class="library-filters"><input type="search" id="search" placeholder="Поиск по библиотеке" aria-label="Поиск по библиотеке"><button type="button" id="playlist-filter" aria-label="Фильтр по плейлистам" aria-expanded="false">Вся библиотека ▾</button></div>
+        <div class="library-filters"><select id="library-sort" aria-label="Сортировка библиотеки"><option value="name">Сортировка: по имени</option><option value="year">Сортировка: по году</option><option value="plays">Сортировка: по прослушиваниям</option></select></div>
         <div class="library-filters">
           <select id="chart-filter" aria-label="Фильтр по чарту выбранной недели"><option value="">Чарт недели: все треки</option><option value="in">Добавлены в чарт</option><option value="out">Не добавлены в чарт</option></select>
           <select id="archive-filter" aria-label="Фильтр по архиву треков"><option value="">Архив: все треки</option><option value="in">Только архивные</option><option value="out">Только не в архиве</option></select>
@@ -130,7 +136,7 @@
       <section class="panel chart"><div class="panelhead"><div class="panel-title"><h2>Чарт недели</h2><span id="chart-count" class="muted"></span></div><div class="chart-heading-actions"><button id="enqueue-chart" class="icon-button" title="Добавить весь чарт в очередь" aria-label="Добавить весь чарт в очередь"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5h12M3 10h12M3 15h7m8-2v8m-4-4h8" /></svg></button><button id="save" class="icon-button" title="Сохранить плейлист" aria-label="Сохранить плейлист"><svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 3h12l4 4v14H3V3h2M7 3v6h10V3M7 21v-8h10v8" /></svg></button><label class="auto-save" title="Автоматически сохранять изменения плейлиста"><input type="checkbox" id="auto-save">Авто</label><button aria-label="Копировать файлы в Current" title="Копировать файлы в Current" class="primary icon-button" id="export"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5" /></svg></button></div></div>
 
         <p id="week-note" class="hint"></p>
-        <ol id="ranking" aria-label="Рейтинг недели"></ol>
+        <ol id="ranking" aria-label="Рейтинг недели"></ol><button id="more-ranking" hidden>Показать ещё</button>
         <div id="export-result"></div>
       </section>
     </div>

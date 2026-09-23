@@ -174,6 +174,30 @@ try {
         }
         exit;
     }
+    if ($action === 'play-count') {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST' || (int)($_SERVER['CONTENT_LENGTH'] ?? 0) > 4096) fail('Некорректный запрос счётчика прослушиваний.');
+        $input = json_decode(file_get_contents('php://input'), true, 512, JSON_THROW_ON_ERROR);
+        $path = $input['path'] ?? null;
+        if (!is_string($path) || !songFile($path, $cfg)) fail('Трек не найден в библиотеке.', 404);
+        $storage = __DIR__ . '/chart-data';
+        if (is_link($storage)) fail('Недопустимое хранилище счётчика.', 500);
+        if (!is_dir($storage) && !mkdir($storage)) fail('Не удалось создать хранилище счётчика.', 500);
+        $lock = fopen($storage . '/play-counts.lock', 'c+');
+        if (!$lock || !flock($lock, LOCK_EX)) fail('Не удалось заблокировать счётчик.', 500);
+        $file = $storage . '/play-counts.php';
+        $counts = [];
+        if (is_file($file)) {
+            $raw = file_get_contents($file);
+            if (strpos($raw, CHART_HEADER) !== 0) throw new RuntimeException('Повреждён файл счётчика прослушиваний.');
+            $counts = json_decode(substr($raw, strlen(CHART_HEADER)), true, 512, JSON_THROW_ON_ERROR);
+            if (!is_array($counts)) throw new RuntimeException('Повреждён файл счётчика прослушиваний.');
+        }
+        $counts[$path] = (int)($counts[$path] ?? 0) + 1;
+        writeState($file, $counts);
+        flock($lock, LOCK_UN); fclose($lock);
+        echo jsonText(['count' => $counts[$path]]);
+        exit;
+    }
     session_start(['cookie_httponly' => true, 'cookie_samesite' => 'Strict', 'cookie_secure' => !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off']);
     if (!isset($_SESSION['charts_token'])) $_SESSION['charts_token'] = bin2hex(random_bytes(24));
     $token = $_SESSION['charts_token']; session_write_close();
@@ -262,6 +286,14 @@ try {
         if (!is_array($archived) || array_values($archived) !== $archived || count(array_filter($archived, 'is_string')) !== count($archived))
             throw new RuntimeException('Повреждён список архивных треков.');
     }
+    $playCounts = [];
+    $playCountsFile = $storage . '/play-counts.php';
+    if (is_file($playCountsFile)) {
+        $raw = file_get_contents($playCountsFile);
+        if (strpos($raw, CHART_HEADER) !== 0) throw new RuntimeException('Повреждён файл счётчика прослушиваний.');
+        $playCounts = json_decode(substr($raw, strlen(CHART_HEADER)), true, 512, JSON_THROW_ON_ERROR);
+        if (!is_array($playCounts)) throw new RuntimeException('Повреждён файл счётчика прослушиваний.');
+    }
     if ($action === 'archive-set') {
         if ((int)($_SERVER['CONTENT_LENGTH'] ?? 0) > 2097152) fail('Слишком большой запрос.', 413);
         $input = json_decode(file_get_contents('php://input'), true, 512, JSON_THROW_ON_ERROR);
@@ -277,7 +309,7 @@ try {
         $songs = []; $root = realpath(localPath($cfg['root']));
         if ($root && is_dir($root)) scanSongs($root, '', 0, $cfg, $songs);
         natcasesort($songs);
-        echo jsonText(['state' => $state, 'metadataPending' => true, 'archived' => $archived, 'token' => $token, 'songs' => array_values($songs), 'libraryMissing' => !$root, 'root' => $cfg['root'], 'playlists' => mfpListPlaylists($playlistDir), 'onlinePlaylists' => ($ini['client']['onlinepls'] ?? 'true') === 'true']);
+        echo jsonText(['state' => $state, 'metadataPending' => true, 'archived' => $archived, 'playCounts' => $playCounts, 'token' => $token, 'songs' => array_values($songs), 'libraryMissing' => !$root, 'root' => $cfg['root'], 'playlists' => mfpListPlaylists($playlistDir), 'onlinePlaylists' => ($ini['client']['onlinepls'] ?? 'true') === 'true']);
     } else {
         if ((int)($_SERVER['CONTENT_LENGTH'] ?? 0) > 2097152) fail('Слишком большой запрос.', 413);
         $input = json_decode(file_get_contents('php://input'), true, 512, JSON_THROW_ON_ERROR);

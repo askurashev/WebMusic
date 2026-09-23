@@ -5,10 +5,11 @@
     const app = host.attachShadow({ mode: 'open' });
     app.append(document.getElementById('my-chart-template').content.cloneNode(true));
     const $ = id => app.getElementById(id);
-    let state, token, library = [], available = new Set(), ranking = [], week, dirty = false, busy = false, shown = 100;
+    let state, token, library = [], available = new Set(), ranking = [], week, dirty = false, busy = false, shown = 100, rankingShown = 100;
     let dragged = null, lastExport = null, saveTimer;
     let archived = new Set(), archiveBusy = false;
     let metadata = {}, editingPath = null, editingRevision = '', tagBusy = false;
+    let playCounts = {};
     let metadataGeneration = 0;
     const editedMetadata = new Set();
     let savedPlaylists = [], onlinePlaylists = true, playlistBusy = false, visiblePaths = [];
@@ -71,7 +72,7 @@
     app.addEventListener('click', event => {
         if (menuAnchor && !playlistMenu.contains(event.target) && event.target !== menuAnchor) closePlaylistMenu();
     });
-    document.addEventListener('pointerdown', event => { if (!event.composedPath().includes(host)) closePlaylistMenu(); });
+    document.addEventListener('pointerdown', event => { if (!event.composedPath().includes(host) && event.target !== document.getElementById('player-playlist-toggle')) closePlaylistMenu(); });
     app.addEventListener('keydown', event => {
         if (!menuAnchor) return;
         event.stopPropagation();
@@ -203,6 +204,10 @@
             const summary = node('span', `${duration} · ${year}`, 'track-details');
             summary.title = `Длительность: ${duration}; год выпуска: ${year}`;
             tags.append(summary);
+            const plays = Number(playCounts[path]) || 0;
+            const playSummary = node('span', `${plays} прослуш.`, 'track-details play-count');
+            playSummary.title = `Число проигрываний: ${plays}`;
+            tags.append(playSummary);
         }
         if (archived.has(path)) tags.append(node('span', 'В архиве', 'archive-tag'));
         for (const list of savedPlaylists) {
@@ -281,6 +286,17 @@
             && (!chartFilter || chartPaths.has(path) === (chartFilter === 'in'))
             && (!archiveFilter || archived.has(path) === (archiveFilter === 'in'))
             && terms.every(term => `${path} ${title(path)} ${metadata[path]?.albumArtist || ''}`.toLocaleLowerCase().includes(term)));
+        const sort = $('library-sort').value;
+        filtered.sort((a, b) => {
+            if (sort === 'year') {
+                const yearA = Number(metadata[a]?.year) || 0, yearB = Number(metadata[b]?.year) || 0;
+                if (yearA !== yearB) return yearB - yearA;
+            } else if (sort === 'plays') {
+                const plays = (Number(playCounts[b]) || 0) - (Number(playCounts[a]) || 0);
+                if (plays) return plays;
+            }
+            return collator.compare(title(a), title(b)) || collator.compare(a, b);
+        });
         visiblePaths = filtered;
         window.filterChartLibrary?.(filtered, [selected.map(list => list.name).join(', '), chartFilter && (chartFilter === 'in' ? 'В чарте недели' : 'Не в чарте недели'), archiveFilter && (archiveFilter === 'in' ? 'В архиве' : 'Не в архиве'), $('search').value.trim()].filter(Boolean).join(' · '));
         $('library-count').textContent = `${filtered.length} треков`;
@@ -317,14 +333,44 @@
         }
         if (!filtered.length) fragment.append(node('p', library.length ? 'Ничего не найдено.' : 'В библиотеке пока нет музыки.', 'empty'));
         $('library').replaceChildren(fragment); $('more').hidden = filtered.length <= shown;
+        syncPlayerActions();
+    }
+    function syncPlayerActions() {
+        const path = window.getMusicPlaybackState?.()?.path || '';
+        const chartButton = document.getElementById('player-chart-toggle');
+        const archiveButton = document.getElementById('player-archive-toggle');
+        const playlistButton = document.getElementById('player-playlist-toggle');
+        const editButton = document.getElementById('player-edit-tags');
+        if (!chartButton || !archiveButton || !playlistButton || !editButton) return;
+        const active = !!path && !!state && available.has(path);
+        const inChart = ranking.includes(path), inArchive = archived.has(path);
+        chartButton.disabled = !active || busy;
+        chartButton.textContent = inChart ? '★' : '☆';
+        chartButton.title = `${inChart ? 'Убрать из' : 'Добавить в'} чарт недели: ${title(path) || 'текущий трек'}`;
+        chartButton.setAttribute('aria-label', chartButton.title);
+        chartButton.setAttribute('aria-pressed', String(inChart));
+        archiveButton.disabled = !active || busy || archiveBusy;
+        archiveButton.textContent = inArchive ? '▣' : '□';
+        archiveButton.title = `${inArchive ? 'Вернуть из архива' : 'Архивировать'}: ${title(path) || 'текущий трек'}`;
+        archiveButton.setAttribute('aria-label', archiveButton.title);
+        archiveButton.setAttribute('aria-pressed', String(inArchive));
+        const inPlaylist = savedPlaylists.some(list => list.songs.some(song => song.path === path));
+        playlistButton.disabled = !active || busy || playlistBusy || !onlinePlaylists;
+        playlistButton.textContent = inPlaylist ? '✓ Плейлист' : '＋ Плейлист';
+        playlistButton.title = `Плейлисты: ${title(path) || 'текущий трек'}`;
+        playlistButton.setAttribute('aria-label', playlistButton.title);
+        editButton.disabled = !active || busy || tagBusy || !/\.mp3$/i.test(path);
+        editButton.title = `Редактировать теги: ${title(path) || 'текущий трек'}`;
+        editButton.setAttribute('aria-label', editButton.title);
     }
     function dates() { return Object.keys(state.weeks).sort(); }
     function controls() {
-        for (const id of ['week', 'archive', 'next-week', 'search', 'more', 'playlist-filter', 'chart-filter', 'archive-filter', 'reload-library', 'auto-save']) $(id).disabled = busy || !state;
+        for (const id of ['week', 'archive', 'next-week', 'search', 'more', 'more-ranking', 'playlist-filter', 'chart-filter', 'archive-filter', 'reload-library', 'auto-save']) $(id).disabled = busy || !state;
         $('save').disabled = busy || !state || (!dirty && !!state.weeks[week]);
         const saveLabel = 'Сохранить плейлист';
         $('save').title = saveLabel; $('save').setAttribute('aria-label', saveLabel); $('save').setAttribute('aria-busy', String(busy));
         $('export').disabled = busy || !state || dirty || !state.weeks[week] || week !== dates().at(-1);
+        syncPlayerActions();
     }
     function renderPlaylistFilter() {
         savedPlaylists.sort((a, b) => collator.compare(a.name, b.name));
@@ -384,6 +430,7 @@
             token = data.token; library = data.songs; available = new Set(library);
             receiveMetadata(data.metadata || metadata);
             archived = new Set(data.archived || []);
+            playCounts = data.playCounts || {};
             savedPlaylists = data.playlists || []; onlinePlaylists = data.onlinePlaylists !== false;
             // Preserve the draft and its revision; never overwrite unsaved ranking edits.
             renderPlaylistFilter(); renderStats(); status(`Библиотека обновлена: ${library.length} треков.`);
@@ -398,7 +445,7 @@
         $('chart-count').textContent = `${ranking.length} треков`;
         $('enqueue-chart').disabled = busy || !ranking.length;
         const fragment = document.createDocumentFragment();
-        ranking.forEach((path, index) => {
+        ranking.slice(0, rankingShown).forEach((path, index) => {
             const row = node('li', undefined, 'trackrow'); row.dataset.index = index; draggable(row, path);
             const pos = node('div', String(index + 1), 'rank');
             const old = previousPlaces.get(path) ?? -1;
@@ -411,7 +458,7 @@
             fragment.append(row);
         });
         if (!ranking.length) fragment.append(node('li', 'Перетащите сюда композиции из библиотеки. Количество треков не ограничено.', 'empty'));
-        $('ranking').replaceChildren(fragment); controls();
+        $('ranking').replaceChildren(fragment); $('more-ranking').hidden = ranking.length <= rankingShown; controls();
     }
     function changed() {
         dirty = true; showSaveNote();
@@ -477,6 +524,7 @@
         if (!force && dirty && !confirm('Перейти к другой неделе без сохранения текущих изменений?')) { $('week').value = week; renderArchive(); return; }
         window.clearTimeout(saveTimer);
         week = next; $('week').value = week;
+        rankingShown = 100;
         const existing = state.weeks[week];
         const preceding = dates().filter(date => date < week).at(-1);
         ranking = [...(existing ? existing.songs : preceding ? state.weeks[preceding].songs : [])];
@@ -548,6 +596,26 @@
         if (dirty) { showSaveNote(); scheduleSave(); }
     };
     $('search').oninput = () => { shown = 100; renderLibrary(); };
+    $('library-sort').onchange = () => { shown = 100; renderLibrary(); };
+    document.getElementById('player-chart-toggle').onclick = () => {
+        const path = window.getMusicPlaybackState?.()?.path;
+        if (!path || busy) return;
+        const index = ranking.indexOf(path);
+        if (index < 0) add(path); else { ranking.splice(index, 1); changed(); }
+        syncPlayerActions();
+    };
+    document.getElementById('player-archive-toggle').onclick = () => {
+        const path = window.getMusicPlaybackState?.()?.path;
+        if (path) void toggleArchived(path);
+    };
+    document.getElementById('player-playlist-toggle').onclick = event => {
+        const path = window.getMusicPlaybackState?.()?.path;
+        if (path) openPlaylistMenu(event.currentTarget, path);
+    };
+    document.getElementById('player-edit-tags').onclick = () => {
+        const path = window.getMusicPlaybackState?.()?.path;
+        if (path && /\.mp3$/i.test(path)) void editTags(path);
+    };
     $('playlist-filter').onclick = () => openPlaylistMenu($('playlist-filter'));
     $('playlist-filter').setAttribute('aria-controls', 'playlist-menu');
     for (const id of ['chart-filter', 'archive-filter']) $(id).onchange = () => { shown = 100; renderLibrary(); };
@@ -555,6 +623,7 @@
     $('enqueue-filtered').onclick = () => enqueue(visiblePaths);
     $('enqueue-chart').onclick = () => enqueue(ranking);
     $('more').onclick = () => { shown += 100; renderLibrary(); };
+    $('more-ranking').onclick = () => { rankingShown += 100; renderRanking(); };
     $('period').oninput = renderStats;
     $('period-kind').onchange = () => {
         const year = $('period').value.slice(0, 4) || String(new Date().getFullYear());
@@ -566,7 +635,14 @@
     };
     window.addEventListener('beforeunload', event => { if (dirty || busy || playlistBusy || archiveBusy || editingPath) { event.preventDefault(); event.returnValue = ''; } });
     window.addEventListener('music-library-ready', () => { if (state) renderLibrary(); fitWorkspace(); });
-    window.addEventListener('music-playback-state', () => app.querySelectorAll('[data-play-path]').forEach(syncPlaybackButton));
+    window.addEventListener('music-playback-state', () => {
+        app.querySelectorAll('[data-play-path]').forEach(syncPlaybackButton);
+        syncPlayerActions();
+    });
+    window.addEventListener('music-play-counted', event => {
+        const { path, count } = event.detail || {};
+        if (path && Number.isFinite(count)) { playCounts[path] = count; renderLibrary(); }
+    });
     window.addEventListener('resize', fitWorkspace);
     window.addEventListener('music-dock-resized', fitWorkspace);
     if (window.ResizeObserver) {

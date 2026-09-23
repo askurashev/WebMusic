@@ -335,6 +335,13 @@ function prepAudio(id) {
 
 	a.onplaying = function() {
 		a.log('Playing');
+		if (a == audio[track] && !a.playCountRecorded && a.path) {
+			a.playCountRecorded = true;
+			fetch('charts.php?action=play-count', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: a.path }) })
+				.then(function(response) { return response.ok ? response.json() : null; })
+				.then(function(result) { if (result) window.dispatchEvent(new CustomEvent('music-play-counted', { detail: { path: a.path, count: result.count } })); })
+				.catch(function() {});
+		}
 	}
 
 	a.onpause = function(e) {
@@ -413,15 +420,17 @@ function prepAudio(id) {
 
 function buildLibrary(root, folder, element) {
 	var li, i, f, cover = false;
+	const fragment = document.createDocumentFragment();
 	for (i in folder) {
 		if (i != '/') {	// Subfolder
 			li = document.createElement('li');
 			cls(li, 'folder', ADD);
 			li.path = root + i;
+			li.searchPath = li.path.toLowerCase();
 			li.textContent = i;
 			li.tabIndex = 1;
 			tree.push(li);
-			element.appendChild(li);
+			fragment.appendChild(li);
 			const ul = li.appendChild(document.createElement('ul'));
 			buildLibrary(root + i +'/', folder[i], ul);
 		} else {
@@ -441,15 +450,17 @@ function buildLibrary(root, folder, element) {
 				li.id = songs.length;
 				cls(li, 'song', ADD);
 				li.path = root + f;
+				li.searchPath = li.path.toLowerCase();
 				if (cover) li.cover = cover;
 				li.textContent = f.substring(f.lastIndexOf('/') + 1, f.lastIndexOf('.'));
 				li.tabIndex = 1;
 				tree.push(li);
 				songs.push(li);
-				element.appendChild(li);
+				fragment.appendChild(li);
 			}
 		}
 	}
+	element.appendChild(fragment);
 }
 
 function reloadLibrary(ask = true) {
@@ -1017,6 +1028,7 @@ function load(id, addtoplaylist = false) {
 	a.autoplay = false;
 	a.canplaythrough = false;
 	a.path = cfg.playlist[a.index].path;
+	a.playCountRecorded = false;
 	a.src = audioSource(a.path);
 	a.load();
 	clearInterval(a.fade);
@@ -1612,63 +1624,42 @@ function setTrashPos() {
 }
 
 function filter(instant = false) {	// Gets event from oninput
-	const terms = dom.filter.value.trim(),
-		length = terms.length,
-		display = length ? 'none' : '';
+	const terms = dom.filter.value.trim(), length = terms.length, display = length ? 'none' : '';
 	var results = false;
 	if (instant && (length < cfg.instantfilter || terms == currentFilter)) return;
-
 	log('Filtering for: "'+ terms +'"');
-	ffor(tree, function(f) {
-		if (cls(f, 'folder'))
-			f.className = 'folder'+ (cls(f, 'dim') ? ' dim' : '');
+	const termsArray = length
+		? (terms.indexOf('"') == -1 ? terms.toLowerCase().split(' ') : terms.match(/"[^"]+"|[^ ]+/g).map(t => t.replaceAll('"', '').toLowerCase()))
+		: [];
+	for (let i = 0; i < tree.length; i++) {
+		const f = tree[i], isFolder = cls(f, 'folder');
+		if (isFolder) f.className = 'folder'+ (cls(f, 'dim') ? ' dim' : '');
 		f.style.display = display;
-	});
-
-	if (length) {
-		if (terms.indexOf('"') == -1)
-			var termsArray = terms.toLowerCase().split(' ');
-		else
-			var termsArray = terms.match(/"[^"]+"|[^ ]+/g).map(t => t.replaceAll('"', ''));
-
-		ffor(tree, function(f) {
-			const path = f.path.toLowerCase();
-
-			if (matchTerms(path, termsArray)) {
-				if (cls(f, 'song') && !matchTerms(path.substring(path.lastIndexOf('/') + 1), termsArray)
-					&& cls(f.parentNode.parentNode, 'match')) return;	// If parent is already a match, only continue if song is a full match
-
-				results = true;
-				cls(f, 'match', ADD);
-				f.style.display = '';
-
-				if (cls(f, 'folder') && f.path.substring(f.path.lastIndexOf('/') + 1) == dom.filter.value) {	// When clicking on folder in player
-					ffor(f.querySelectorAll('ul > *'), function(c) {
-						c.style.display = '';
-					});
-					cls(f, 'open', ADD);
-				}
-
-				for (var p = f.parentNode; p && p !== dom.tree; p = p.parentNode) {
-					if (cls(p, 'parent'))
-						break;
-					if (cls(p, 'folder')) {
-						cls(p, 'open', ADD);
-						cls(p, 'parent', ADD);
-					}
-					p.style.display = '';
-				}
-			}
-		});
+		if (!length || !matchTerms(f.searchPath, termsArray)) continue;
+		if (cls(f, 'song') && cls(f.parentNode.parentNode, 'match')) {
+			const nameStart = f.searchPath.lastIndexOf('/') + 1;
+			if (!matchTerms(f.searchPath.substring(nameStart), termsArray)) continue;
+		}
+		results = true;
+		cls(f, 'match', ADD);
+		f.style.display = '';
+		if (isFolder && f.path.substring(f.path.lastIndexOf('/') + 1) == terms) {
+			const children = f.querySelectorAll(':scope > ul > *');
+			for (let j = 0; j < children.length; j++) children[j].style.display = '';
+			cls(f, 'open', ADD);
+		}
+		for (let p = f.parentNode; p && p !== dom.tree; p = p.parentNode) {
+			if (cls(p, 'parent')) break;
+			if (cls(p, 'folder')) { cls(p, 'open', ADD); cls(p, 'parent', ADD); }
+			p.style.display = '';
+		}
 	}
-
 	cls(dom.library, 'unfold', ADD);
 	if (results) {
 		currentFilter = terms;
 		if (!instant) keyNav(null, 'down');
 	}
 }
-
 function matchTerms(path, termsArray) {
 	var match = true;
 	ffor(termsArray, function(t) {

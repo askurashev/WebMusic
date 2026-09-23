@@ -47,7 +47,7 @@ label input, label select { font-size: 1.15em; }
 .library-filters { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); align-items: center; gap: .4em; margin-bottom: .5em; }
 #playlist-note { display: block; margin-top: .35em; }
 #playlist-note:empty { display: none; }
-.tracklist, #ranking { max-height: 60vh; overflow: auto; overscroll-behavior: contain; scrollbar-color: var(--scroll) transparent; scrollbar-width: thin; }
+.tracklist, #ranking { max-height: 60vh; overflow: auto; overflow-anchor: none; overscroll-behavior: contain; scrollbar-color: var(--scroll) transparent; scrollbar-width: thin; }
 .trackrow { display: flex; align-items: center; flex-wrap: wrap; gap: .4em; border-bottom: 1px solid var(--border); padding: .4em 0; }
 .trackrow[draggable=true] { cursor: grab; }
 .trackrow .info { flex: 1; min-width: 6em; }
@@ -84,7 +84,7 @@ table { width: 100%; border-collapse: collapse; text-align: left; }
 th { color: var(--text-dim); font-weight: 400; font-size: .8em; }
 td, th { padding: .55em .6em; border-bottom: 1px solid var(--border); }
 td:first-child { color: var(--focus); }
-#more { margin-top: .8em; }
+#more, #more-ranking { margin-top: .8em; }
 [hidden] { display: none !important; }
 @media(max-width:1000px) {
     .workspace { grid-template-columns: 1fr; }
