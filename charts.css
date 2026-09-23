@@ -61,6 +61,11 @@ label input, label select { font-size: 1.15em; }
 .format-tag, .missing-tag { color: var(--text-dim); font-size: 10px; letter-spacing: .04em; }
 .missing-tag { color: #d96555; }
 .trackrow button { padding: .25em .45em; flex-shrink: 0; }
+#lyrics-window { position: fixed; inset: auto 1.5em 10em auto; margin: 0; width: min(34em, calc(100vw - 3em)); max-height: min(65vh, 36em); padding: 1em; border: 1px solid var(--focus-dim); border-radius: var(--radius); background: var(--bg-popup); color: var(--text); box-shadow: 0 5px 30px var(--box-shadow); }
+#lyrics-window header { display: flex; align-items: center; justify-content: space-between; gap: 1em; }
+#lyrics-window h2 { margin: 0; font-size: 1.1em; }
+#lyrics-window pre { max-height: calc(65vh - 5em); overflow: auto; margin: .8em 0 0; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
+#lyrics-window button { min-width: 2em; }
 .trackrow .actions { display: flex; gap: .2em; }
 .trackrow .playlist-picker { max-width: 11em; font-size: 11px; padding: .35em; }
 .rank { color: var(--focus); min-width: 2em; text-align: center; font-size: 1.2em; }

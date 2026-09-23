@@ -116,6 +116,14 @@
         const name = tags?.title || path.split('/').pop().replace(/\.[^.]+$/, '');
         return tags?.artist ? `${tags.artist} — ${name}` : name;
     }
+    function showLyrics(path) {
+        const lyrics = metadata[path]?.lyrics;
+        if (!lyrics) return;
+        const windowEl = $('lyrics-window');
+        $('lyrics-heading').textContent = title(path);
+        $('lyrics-text').textContent = lyrics;
+        if (!windowEl.open) windowEl.show();
+    }
     async function copySongTitle(path) {
         try {
             await navigator.clipboard.writeText(title(path));
@@ -306,6 +314,8 @@
         for (const path of filtered.slice(0, shown)) {
             const row = node('div', undefined, 'trackrow'); draggable(row, path);
             const actions = node('div', undefined, 'actions');
+            const lyricsButton = button('♫', `Текст песни: ${title(path)}`, () => showLyrics(path), !metadata[path]?.lyrics);
+            lyricsButton.className = 'lyrics-button'; actions.append(lyricsButton);
             const chartButton = button('★', `${chartPaths.has(path) ? 'Убрать из чарта' : 'Добавить в чарт'}: ${title(path)}`, () => {
                 if (busy) return;
                 const index = ranking.indexOf(path);
@@ -341,7 +351,8 @@
         const archiveButton = document.getElementById('player-archive-toggle');
         const playlistButton = document.getElementById('player-playlist-toggle');
         const editButton = document.getElementById('player-edit-tags');
-        if (!chartButton || !archiveButton || !playlistButton || !editButton) return;
+        const lyricsButton = document.getElementById('player-lyrics');
+        if (!chartButton || !archiveButton || !playlistButton || !editButton || !lyricsButton) return;
         const active = !!path && !!state && available.has(path);
         const inChart = ranking.includes(path), inArchive = archived.has(path);
         chartButton.disabled = !active || busy;
@@ -362,6 +373,9 @@
         editButton.disabled = !active || busy || tagBusy || !/\.mp3$/i.test(path);
         editButton.title = `Редактировать теги: ${title(path) || 'текущий трек'}`;
         editButton.setAttribute('aria-label', editButton.title);
+        lyricsButton.disabled = !active || busy || !metadata[path]?.lyrics;
+        lyricsButton.title = `Показать текст песни: ${title(path) || 'текущий трек'}`;
+        lyricsButton.setAttribute('aria-label', lyricsButton.title);
     }
     function dates() { return Object.keys(state.weeks).sort(); }
     function controls() {
@@ -616,6 +630,14 @@
         const path = window.getMusicPlaybackState?.()?.path;
         if (path && /\.mp3$/i.test(path)) void editTags(path);
     };
+    document.getElementById('player-lyrics').onclick = () => {
+        const path = window.getMusicPlaybackState?.()?.path;
+        if (path) showLyrics(path);
+    };
+    $('lyrics-close').onclick = () => $('lyrics-window').close();
+    $('lyrics-window').addEventListener('click', event => {
+        if (event.target === event.currentTarget) event.currentTarget.close();
+    });
     $('playlist-filter').onclick = () => openPlaylistMenu($('playlist-filter'));
     $('playlist-filter').setAttribute('aria-controls', 'playlist-menu');
     for (const id of ['chart-filter', 'archive-filter']) $(id).onchange = () => { shown = 100; renderLibrary(); };

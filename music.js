@@ -1377,25 +1377,16 @@ function playNext(ended = false) {
 
 	const path = cfg.playlist[cfg.index].path,
 		nfo = getSongInfo(path),
-		prevcover = dom.cover.src || def.cover;
 	var cover = cfg.playlist[cfg.index].cover;
 	cover = cover ? esc(root + path.substring(0, path.lastIndexOf('/') + 1) + cover) : def.cover;
-	if (prevcover.indexOf(cover) == -1) {
-		dom.cover.style.opacity = 0;
-		if (cls(dom.player, 'full')) dom.current.style.opacity = 0;
-		setTimeout(function() {
-			if (index != cfg.index) return;	// If song has changed since timeout
-			dom.album.textContent = getAlbumInfo(nfo);
-			dom.title.textContent = nfo.title;
-			dom.cover.src = cover;
-			setTimeout(function() {
-				if (cls(dom.player, 'full')) dom.current.style.opacity = '';
-			}, 150);
-		}, 150);
-	} else {
-		dom.album.textContent = getAlbumInfo(nfo);
-		dom.title.textContent = nfo.title;
-	}
+	dom.album.textContent = getAlbumInfo(nfo);
+	dom.title.textContent = nfo.title;
+	dom.cover.style.opacity = 0;
+	if (cls(dom.player, 'full')) dom.current.style.opacity = 0;
+	dom.cover.src = cover;
+	if (cls(dom.player, 'full')) setTimeout(function() {
+		if (index == cfg.index) dom.current.style.opacity = '';
+	}, 150);
 
 	dom.pagetitle.textContent = nfo.title + (nfo.artist ? ' - '+ nfo.artist : '');
 	fillShare(path);

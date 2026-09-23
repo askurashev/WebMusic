@@ -80,7 +80,24 @@ function mfpReadTags(string $file): array {
 // Display-only metadata never participates in the three-field tag editor.
 function mfpTrackDetails(string $file, array $read): array {
     $values = [];
+    $lyrics = '';
     foreach ($read['frames'] as $frame) {
+        if (in_array($frame['id'], ['USLT', 'ULT'], true) && $lyrics === '') {
+            $raw = $frame['raw']; $head = $read['version'] === 2 ? 6 : 10;
+            if ($head === 10 && substr($raw, 8, 2) !== "\0\0") continue;
+            $body = substr($raw, $head);
+            if (strlen($body) < 4) continue;
+            $encoding = ord($body[0]);
+            if (!isset(['ISO-8859-1', 'UTF-16', 'UTF-16BE', 'UTF-8'][$encoding])) continue;
+            $descriptor = substr($body, 4);
+            $wide = $encoding === 1 || $encoding === 2;
+            $end = $wide ? strpos($descriptor, "\0\0") : strpos($descriptor, "\0");
+            if ($end === false) continue;
+            if ($wide && ($end & 1)) $end++;
+            try { $lyrics = mfpTagText(chr($encoding) . substr($descriptor, $end + ($wide ? 2 : 1))); }
+            catch (Throwable $e) { $lyrics = ''; }
+            continue;
+        }
         if (!in_array($frame['id'], ['TYE', 'TYER', 'TDRC', 'TDRL', 'TLE', 'TLEN'], true)) continue;
         $head = $read['version'] === 2 ? 6 : 10;
         if ($head === 10 && substr($frame['raw'], 8, 2) !== "\0\0") continue;
@@ -96,7 +113,7 @@ function mfpTrackDetails(string $file, array $read): array {
     $length = $values['TLEN'] ?? $values['TLE'] ?? '';
     $duration = ctype_digit($length) && is_finite((float)$length) && (float)$length > 0 ? (float)$length / 1000 : null;
     if ($duration === null) $duration = mfpMp3Duration($file, $read['offset'], strlen($read['v1']));
-    return ['duration' => $duration, 'year' => $year];
+    return ['duration' => $duration, 'year' => $year, 'lyrics' => $lyrics];
 }
 function mfpMp3Duration(string $file, int $offset, int $tail): ?float {
     $stream = fopen($file, 'rb');
