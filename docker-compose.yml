@@ -11,6 +11,7 @@ services:
       - ./data/chart-data:/var/www/html/chart-data
       - ./data/chart-exports:/var/www/html/chart-exports
       - /srv/webmusic/library:/var/www/html/library
+      - ./docker/php/uploads.ini:/usr/local/etc/php/conf.d/uploads.ini:ro
 
     networks:
       - proxy
