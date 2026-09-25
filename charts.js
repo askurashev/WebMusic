@@ -12,7 +12,7 @@
     let playCounts = {};
     let metadataGeneration = 0;
     const editedMetadata = new Set();
-    let savedPlaylists = [], onlinePlaylists = true, playlistBusy = false, visiblePaths = [];
+    let savedPlaylists = [], onlinePlaylists = true, playlistBusy = false, uploadsEnabled = false, uploadMaxBytes = 104857600, uploadBusy = false, visiblePaths = [];
     let focusedPlaylistPicker = null, libraryRenderPending = false;
     const selectedPlaylists = new Set();
     let menuAnchor = null, menuPath = null;
@@ -266,6 +266,26 @@
         if (!response.ok || result.error) throw new Error(result.error || 'Ошибка сервера.');
         return result;
     }
+    async function uploadSelectedFiles(files) {
+        if (!files.length || uploadBusy || !uploadsEnabled) return;
+        if (files.length > 20) { status('За один раз можно загрузить не более 20 файлов.', true); return; }
+        const tooLarge = files.find(file => file.size > uploadMaxBytes);
+        if (tooLarge) { status(`Файл «${tooLarge.name}» превышает лимит ${Math.ceil(uploadMaxBytes / 1048576)} МБ.`, true); return; }
+        uploadBusy = true; $('upload-library').disabled = true;
+        try {
+            for (let i = 0; i < files.length; i++) {
+                status(`Загрузка ${i + 1} из ${files.length}: ${files[i].name}`, false, true);
+                const form = new FormData(); form.append('audio[]', files[i], files[i].name);
+                const response = await fetch('charts.php?action=upload', { method: 'POST', headers: { 'X-Chart-Token': token }, body: form, cache: 'no-store' });
+                let result;
+                try { result = await response.json(); } catch (_) { throw new Error(`Сервер вернул некорректный ответ при загрузке «${files[i].name}».`); }
+                if (!response.ok || result.error) throw new Error(result.error || `Не удалось загрузить «${files[i].name}».`);
+            }
+            await refreshLibrary();
+            status(`Загружено файлов: ${files.length}.`);
+        } catch (error) { status(error.message, true); }
+        finally { uploadBusy = false; $('upload-library').disabled = false; }
+    }
     function preview(path) {
         try {
             if (typeof window.playChartSong !== 'function') throw new Error('Плеер ещё загружается. Повторите через несколько секунд.');
@@ -442,6 +462,8 @@
             if (window.reloadMusicLibrary) await window.reloadMusicLibrary();
             const data = await api('state');
             token = data.token; library = data.songs; available = new Set(library);
+            uploadsEnabled = data.uploadsEnabled === true; uploadMaxBytes = Number(data.uploadMaxBytes) || uploadMaxBytes;
+            $('upload-library').hidden = !uploadsEnabled;
             receiveMetadata(data.metadata || metadata);
             archived = new Set(data.archived || []);
             playCounts = data.playCounts || {};
@@ -642,6 +664,8 @@
     $('playlist-filter').setAttribute('aria-controls', 'playlist-menu');
     for (const id of ['chart-filter', 'archive-filter']) $(id).onchange = () => { shown = 100; renderLibrary(); };
     $('reload-library').onclick = refreshLibrary;
+    $('upload-library').onclick = () => $('upload-files').click();
+    $('upload-files').onchange = () => { const files = [...$('upload-files').files]; $('upload-files').value = ''; void uploadSelectedFiles(files); };
     $('enqueue-filtered').onclick = () => enqueue(visiblePaths);
     $('enqueue-chart').onclick = () => enqueue(ranking);
     $('more').onclick = () => { shown += 100; renderLibrary(); };
@@ -688,6 +712,8 @@
     (async () => {
         try {
             const data = await api('state'); state = data.state; token = data.token;
+            uploadsEnabled = data.uploadsEnabled === true; uploadMaxBytes = Number(data.uploadMaxBytes) || uploadMaxBytes;
+            $('upload-library').hidden = !uploadsEnabled;
             library = data.songs; available = new Set(library);
             receiveMetadata(data.metadata);
             archived = new Set(data.archived || []);

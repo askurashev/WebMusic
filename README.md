@@ -233,6 +233,8 @@ Client values are emitted as JavaScript expressions: use **single quotes around 
 | `maxdepth` | `10` | Maximum recursive directory depth. |
 | `ext_images` | `jpg,png` | Comma-separated cover image extensions. |
 | `ext_songs` | See Requirements | Comma-separated recognized audio extensions, without leading dots. |
+| `uploads` | `0` | Set to `1` to show authenticated audio uploads in the library. The library directory must be writable. |
+| `upload_max_bytes` | `104857600` | Maximum size per uploaded file in bytes (100 MiB by default); PHP's `upload_max_filesize` and `post_max_size` must allow at least this much. |
 
 `root` may also be an absolute path. This lets the same application use an S3-compatible bucket mounted as a directory on a server, while local installs continue using `library` unchanged. The application accesses the mount through normal filesystem operations; it does not connect to the S3 API directly.
 
@@ -242,20 +244,21 @@ Mount the bucket on the server with a tool such as [rclone](https://rclone.org/s
 
 ```sh
 rclone mount music-s3:my-music-bucket /srv/webmusic/library \
-  --read-only \
   --vfs-cache-mode full
 ```
 
-Run the mount as a persistent service under the same account that runs PHP, and ensure that account can read the mounted files. `--vfs-cache-mode full` lets the mount cache file contents locally for seeking and repeated playback; provide enough cache disk space. Keep the S3 credentials in rclone's protected configuration or the server's secret manager, never in the repository or browser configuration.
+Run the mount as a persistent service under the same account that runs PHP, and ensure that account can access the mounted files. `--vfs-cache-mode full` lets the mount cache file contents locally for seeking and repeated playback; provide enough cache disk space. Keep the S3 credentials in rclone's protected configuration or the server's secret manager, never in the repository or browser configuration.
 
 On that server, create `music.ini` with:
 
 ```ini
 [server]
 root = /srv/webmusic/library
+uploads = 1
+upload_max_bytes = 104857600
 ```
 
-Use the platform's actual mount path. The app's playlists, chart history, and chart exports remain on the server's local disk. Keep `chart-exports` outside the mounted library. The tag editor writes MP3 files, so a read-only mount disables tag saving while leaving playback and charts available. A writable S3 mount can implement writes through the mount tool, but tag edits and chart exports may cause full-file transfers and are sensitive to the mount's caching and rename semantics. For a large or write-heavy music collection, keep the bucket read-only to this app and manage audio uploads/tag edits separately.
+Use the platform's actual mount path. The app's playlists, chart history, and chart exports remain on the server's local disk. Keep `chart-exports` outside the mounted library. With `uploads = 1`, the library header shows an upload button. It accepts up to 20 audio files per selection, stores them at the library root, and refuses to overwrite an existing filename. The per-file limit is configured by `upload_max_bytes`; PHP's `upload_max_filesize` and `post_max_size` must be at least as large. The mount must permit writes. S3 filesystem mounts can transfer complete files and depend on local cache space and mount write semantics; keep a backup of the bucket. The MP3 tag editor also writes files and may trigger full-file transfers.
 
 For local development, leave `root = library` in the ignored local `music.ini` (or omit the override); no mount or S3 credentials are needed. Do not commit a server-specific `music.ini`.
 

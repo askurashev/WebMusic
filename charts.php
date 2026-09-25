@@ -201,9 +201,40 @@ try {
     session_start(['cookie_httponly' => true, 'cookie_samesite' => 'Strict', 'cookie_secure' => !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off']);
     if (!isset($_SESSION['charts_token'])) $_SESSION['charts_token'] = bin2hex(random_bytes(24));
     $token = $_SESSION['charts_token']; session_write_close();
-    if (!in_array($action, ['state', 'save', 'export', 'playlists', 'playlist-add', 'playlist-remove', 'archive-set', 'tags-read', 'tags-save', 'metadata'], true)) fail('Неизвестное действие.', 404);
+    if (!in_array($action, ['state', 'save', 'export', 'playlists', 'playlist-add', 'playlist-remove', 'archive-set', 'tags-read', 'tags-save', 'metadata', 'upload'], true)) fail('Неизвестное действие.', 404);
     if (!in_array($action, ['state', 'playlists'], true) && ($_SERVER['REQUEST_METHOD'] !== 'POST' || !hash_equals($token, $_SERVER['HTTP_X_CHART_TOKEN'] ?? ''))) fail('Обновите страницу и повторите действие.', 403);
     $playlistDir = localPath($cfg['playlistdir']);
+    if ($action === 'upload') {
+        if ((int)($cfg['uploads'] ?? 0) !== 1) fail('Загрузка файлов отключена в настройках сервера.', 403);
+        $maxBytes = max(1, (int)($cfg['upload_max_bytes'] ?? 104857600));
+        if (empty($_FILES['audio']) || !is_array($_FILES['audio'])) fail('Выберите аудиофайл для загрузки.');
+        $root = realpath(localPath($cfg['root']));
+        if (!$root || !is_dir($root) || !is_writable($root)) fail('Папка библиотеки недоступна для записи.', 500);
+        $uploaded = [];
+        $files = $_FILES['audio'];
+        $count = is_array($files['name'] ?? null) ? count($files['name']) : 0;
+        if ($count < 1 || $count > 20) fail('За один раз можно загрузить от 1 до 20 файлов.');
+        for ($i = 0; $i < $count; $i++) {
+            $error = (int)($files['error'][$i] ?? UPLOAD_ERR_NO_FILE);
+            if ($error !== UPLOAD_ERR_OK) {
+                $message = $error === UPLOAD_ERR_INI_SIZE || $error === UPLOAD_ERR_FORM_SIZE ? 'Файл превышает ограничение PHP на размер загрузки.' : 'Не удалось принять один из файлов (код ' . $error . ').';
+                fail($message, 400);
+            }
+            $name = (string)($files['name'][$i] ?? '');
+            $tmp = (string)($files['tmp_name'][$i] ?? '');
+            $size = (int)($files['size'][$i] ?? 0);
+            if ($size < 1 || $size > $maxBytes || !is_uploaded_file($tmp)) fail('Недопустимый размер или источник загружаемого файла.');
+            if ($name === '' || preg_match('~[\\/\\:\x00-\x1f\x7f]~u', $name) || $name !== basename($name) || $name[0] === '.') fail('Недопустимое имя файла.');
+            $extension = strtolower(pathinfo($name, PATHINFO_EXTENSION));
+            if (!in_array($extension, $cfg['extensions'], true)) fail('Формат файла не входит в список ext_songs: ' . $name);
+            $destination = $root . DIRECTORY_SEPARATOR . $name;
+            if (file_exists($destination) || is_link($destination)) fail('Файл с таким именем уже существует: ' . $name, 409);
+            if (!move_uploaded_file($tmp, $destination)) fail('Не удалось сохранить файл в библиотеку. Проверьте права записи и подключение хранилища.', 500);
+            $uploaded[] = $name;
+        }
+        echo jsonText(['uploaded' => $uploaded]);
+        exit;
+    }
     if ($action === 'metadata') {
         if ((int)($_SERVER['CONTENT_LENGTH'] ?? 0) > 65536) fail('Слишком большой запрос.', 413);
         $input = json_decode(file_get_contents('php://input'), true, 512, JSON_THROW_ON_ERROR);
@@ -309,7 +340,7 @@ try {
         $songs = []; $root = realpath(localPath($cfg['root']));
         if ($root && is_dir($root)) scanSongs($root, '', 0, $cfg, $songs);
         natcasesort($songs);
-        echo jsonText(['state' => $state, 'metadataPending' => true, 'archived' => $archived, 'playCounts' => $playCounts, 'token' => $token, 'songs' => array_values($songs), 'libraryMissing' => !$root, 'root' => $cfg['root'], 'playlists' => mfpListPlaylists($playlistDir), 'onlinePlaylists' => ($ini['client']['onlinepls'] ?? 'true') === 'true']);
+        echo jsonText(['state' => $state, 'metadataPending' => true, 'archived' => $archived, 'playCounts' => $playCounts, 'token' => $token, 'songs' => array_values($songs), 'libraryMissing' => !$root, 'root' => $cfg['root'], 'uploadsEnabled' => (int)($cfg['uploads'] ?? 0) === 1, 'uploadMaxBytes' => (int)($cfg['upload_max_bytes'] ?? 104857600), 'playlists' => mfpListPlaylists($playlistDir), 'onlinePlaylists' => ($ini['client']['onlinepls'] ?? 'true') === 'true']);
     } else {
         if ((int)($_SERVER['CONTENT_LENGTH'] ?? 0) > 2097152) fail('Слишком большой запрос.', 413);
         $input = json_decode(file_get_contents('php://input'), true, 512, JSON_THROW_ON_ERROR);
