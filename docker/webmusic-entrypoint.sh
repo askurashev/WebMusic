@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-AUTH_FILE=/var/www/html/auth.ini
+AUTH_FILE=/etc/webmusic/auth.ini
 PASS_FILE=/etc/apache2/webmusic.htpasswd
 
 if [ ! -f "$AUTH_FILE" ]; then
@@ -9,8 +9,8 @@ if [ ! -f "$AUTH_FILE" ]; then
     exit 1
 fi
 
-USERNAME="$(php -r '$c=parse_ini_file("/var/www/html/auth.ini", false, INI_SCANNER_RAW); echo $c["username"] ?? "";')"
-PASSWORD="$(php -r '$c=parse_ini_file("/var/www/html/auth.ini", false, INI_SCANNER_RAW); echo $c["password"] ?? "";')"
+USERNAME="$(php -r '$c=parse_ini_file("/etc/webmusic/auth.ini", false, INI_SCANNER_RAW); echo $c["username"] ?? "";')"
+PASSWORD="$(php -r '$c=parse_ini_file("/etc/webmusic/auth.ini", false, INI_SCANNER_RAW); echo $c["password"] ?? "";')"
 
 if [ -z "$USERNAME" ] || [ -z "$PASSWORD" ]; then
     echo "WebMusic authentication is not configured: username/password is empty." >&2
