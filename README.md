@@ -38,8 +38,9 @@ Recognized audio extensions are configurable. The default list is `mp3, flac, og
 1. Clone this repository, or download and extract its source archive.
 2. Install PHP and add `php.exe` to PATH. Alternatively, extract a Windows PHP distribution into `.runtime/php/`, so that `.runtime/php/php.exe` exists.
 3. Create a `library` directory in the project root and place your music inside it. Subfolders are supported.
-4. Double-click `start.cmd`.
-5. The launcher opens **http://127.0.0.1:8765/music.htm**.
+4. Copy `auth.example.ini` to `auth.ini` and set a private password.
+5. Double-click `start.cmd`.
+6. The launcher opens **http://127.0.0.1:8765/music.htm**; the browser asks for the credentials in `auth.ini`.
 
 Example local layout:
 
@@ -67,24 +68,24 @@ Closing the browser does not stop the background server. To stop it, end the cor
 From the project root, with PHP available in PATH:
 
 ```sh
-php -S 127.0.0.1:8765 -t .
+php -S 127.0.0.1:8765 -t . router.php
 ```
 
-Open **http://127.0.0.1:8765/music.htm**. Keep the terminal open; press Ctrl+C to stop this server.
+Create `auth.ini` from `auth.example.ini` first. Open **http://127.0.0.1:8765/music.htm**. Keep the terminal open; press Ctrl+C to stop this server.
 
 For a portable Windows installation, use PowerShell:
 
 ```powershell
-.\.runtime\php\php.exe -S 127.0.0.1:8765 -t .
+.\.runtime\php\php.exe -S 127.0.0.1:8765 -t . router.php
 ```
 
 **Serve the application over HTTP.** Opening `music.htm` directly with a `file://` URL cannot execute PHP and will not load the application correctly. The legacy `charts.htm` address redirects to the unified page.
 
 ### Existing PHP web server
 
-Place the application in a PHP-enabled document root and open `music.htm` through that server. The PHP process must be able to read the library and create/write `music.pls`, `chart-data`, and `chart-exports`. You can create those directories beforehand and grant access to the server's user.
+Place the application in a PHP-enabled document root and configure HTTP Basic authentication in the web server for the entire application directory, including static files and music. For PHP's built-in server, use `router.php` as shown above. The PHP process must be able to read the library and create/write `music.pls`, `chart-data`, and `chart-exports`. You can create those directories beforehand and grant access to the server's user.
 
-This is a personal application without user accounts or server-side access control. The player's password lock is a UI control, not authentication. Publishing the source repository does not require exposing a running instance. Keep a running instance local or behind access control you configure separately; the PHP development server is intended for local use. Static hosting such as GitHub Pages cannot run its PHP backend.
+The launcher and built-in-server instructions use HTTP Basic authentication, protecting the page, APIs, and static media. `auth.ini` (ignored by Git) supplies `username` and `password`; alternatively set `WEBMUSIC_USERNAME` and `WEBMUSIC_PASSWORD`. The player's password lock is a separate UI control. For public hosting, use HTTPS so credentials are encrypted in transit and configure equivalent authentication in the web server for all files. Static hosting such as GitHub Pages cannot run its PHP backend.
 
 ## Using the library and player
 

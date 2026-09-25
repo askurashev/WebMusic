@@ -13,19 +13,25 @@ if ($listener) {
     if ($serverProcess.Name -ne 'php.exe' -or -not $serverProcess.CommandLine.Contains($projectRoot)) {
         throw "Port $port is already used by another application. Stop it or change the port in start.ps1."
     }
+    if (-not $serverProcess.CommandLine.Contains('router.php')) {
+        throw "A previous WebMusic server is running without authentication. Stop that PHP process and run start.cmd again."
+    }
 } else {
     $logDir = Join-Path $projectRoot '.runtime'
     New-Item -ItemType Directory -Path $logDir -Force | Out-Null
-    $server = Start-Process -FilePath $phpExecutable -ArgumentList @('-S', "127.0.0.1:$port", '-t', ('"' + $projectRoot + '"')) -WorkingDirectory $projectRoot -WindowStyle Hidden -RedirectStandardOutput (Join-Path $logDir 'server.out.log') -RedirectStandardError (Join-Path $logDir 'server.err.log') -PassThru
+    $router = Join-Path $projectRoot 'router.php'
+    $server = Start-Process -FilePath $phpExecutable -ArgumentList @('-S', "127.0.0.1:$port", '-t', ('"' + $projectRoot + '"'), ('"' + $router + '"')) -WorkingDirectory $projectRoot -WindowStyle Hidden -RedirectStandardOutput (Join-Path $logDir 'server.out.log') -RedirectStandardError (Join-Path $logDir 'server.err.log') -PassThru
     for ($attempt = 0; $attempt -lt 30; $attempt++) {
         Start-Sleep -Milliseconds 100
         if ($server.HasExited) { throw 'PHP failed to start. Check .runtime\server.err.log.' }
         try {
             $response = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 1
             if ($response.StatusCode -eq 200) { break }
-        } catch {}
+        } catch {
+            if ($_.Exception.Response.StatusCode.value__ -eq 401) { $response = @{ StatusCode = 401 }; break }
+        }
     }
-    if (-not $response -or $response.StatusCode -ne 200) { throw 'Local server did not respond. Check .runtime\server.err.log.' }
+    if (-not $response) { throw 'Local server did not respond. Check .runtime\server.err.log.' }
 }
 Write-Host "Music Folder Player: $url"
 Start-Process $url
