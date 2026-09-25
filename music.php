@@ -127,7 +127,14 @@
 
 	$lib_path = $cfg['playlistdir'] .'/library.json';
 	if (!$cfg['cache'] || isset($_GET['play']) || isset($_GET['reload']) || !file_exists($lib_path)) {
-		$lib = json_encode(tree($dir, 0));
+		// An empty, but accessible library is valid. Only report failure when PHP
+		// cannot access the configured root at all.
+		if (!is_dir($dir) || !is_readable($dir)) {
+			$lib = 'null';
+		} else {
+			$tree = tree($dir, 0);
+			$lib = json_encode($tree === false ? array() : $tree);
+		}
 		if ($cfg['cache'] && !isset($_GET['play'])) {
 			if (!is_dir($cfg['playlistdir'])) mkdir($cfg['playlistdir']);
 			file_put_contents($lib_path, $lib);
