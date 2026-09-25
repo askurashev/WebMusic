@@ -227,12 +227,37 @@ Client values are emitted as JavaScript expressions: use **single quotes around 
 
 | Option | Default | Purpose |
 | --- | --- | --- |
-| `root` | `library` | Music directory, relative to the project directory. |
+| `root` | `library` | Music directory, relative to the project directory or an absolute path (including a mounted S3-compatible bucket). |
 | `playlistdir` | `music.pls` | Directory containing saved playlists and the optional library cache. |
 | `cache` | `1` | Cache the scanned folder structure for faster startup; use Reload Library after changing files. |
 | `maxdepth` | `10` | Maximum recursive directory depth. |
 | `ext_images` | `jpg,png` | Comma-separated cover image extensions. |
 | `ext_songs` | See Requirements | Comma-separated recognized audio extensions, without leading dots. |
+
+`root` may also be an absolute path. This lets the same application use an S3-compatible bucket mounted as a directory on a server, while local installs continue using `library` unchanged. The application accesses the mount through normal filesystem operations; it does not connect to the S3 API directly.
+
+### Use an S3-compatible bucket on a server
+
+Mount the bucket on the server with a tool such as [rclone](https://rclone.org/s3/), then point `root` at its mount point. For example, configure an rclone remote named `music-s3` for your S3 endpoint and bucket, and mount it at `/srv/webmusic/library`:
+
+```sh
+rclone mount music-s3:my-music-bucket /srv/webmusic/library \
+  --read-only \
+  --vfs-cache-mode full
+```
+
+Run the mount as a persistent service under the same account that runs PHP, and ensure that account can read the mounted files. `--vfs-cache-mode full` lets the mount cache file contents locally for seeking and repeated playback; provide enough cache disk space. Keep the S3 credentials in rclone's protected configuration or the server's secret manager, never in the repository or browser configuration.
+
+On that server, create `music.ini` with:
+
+```ini
+[server]
+root = /srv/webmusic/library
+```
+
+Use the platform's actual mount path. The app's playlists, chart history, and chart exports remain on the server's local disk. Keep `chart-exports` outside the mounted library. The tag editor writes MP3 files, so a read-only mount disables tag saving while leaving playback and charts available. A writable S3 mount can implement writes through the mount tool, but tag edits and chart exports may cause full-file transfers and are sensitive to the mount's caching and rename semantics. For a large or write-heavy music collection, keep the bucket read-only to this app and manage audio uploads/tag edits separately.
+
+For local development, leave `root = library` in the ignored local `music.ini` (or omit the override); no mount or S3 credentials are needed. Do not commit a server-specific `music.ini`.
 
 If you choose custom library or playlist directories inside the repository, add those paths to `.gitignore` too. Git does not read these settings to discover private directories.
 
