@@ -1,0 +1,30 @@
+services:
+  webmusic:
+    build: .
+    container_name: webmusic
+    restart: unless-stopped
+
+    volumes:
+      - ./music.ini:/var/www/html/music.ini:ro
+      - ./data/music.pls:/var/www/html/music.pls
+      - ./data/chart-data:/var/www/html/chart-data
+      - ./data/chart-exports:/var/www/html/chart-exports
+      - /srv/webmusic/library:/var/www/html/library
+
+    networks:
+      - proxy
+
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=proxy"
+      - "traefik.http.routers.webmusic.rule=Host(`kurashev.com`) && PathPrefix(`/music`)"
+      - "traefik.http.routers.webmusic.entrypoints=websecure"
+      - "traefik.http.routers.webmusic.tls=true"
+      - "traefik.http.routers.webmusic.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.webmusic.middlewares=webmusic-strip"
+      - "traefik.http.middlewares.webmusic-strip.stripprefix.prefixes=/music"
+      - "traefik.http.services.webmusic.loadbalancer.server.port=80"
+
+networks:
+  proxy:
+    external: true
