@@ -5,7 +5,8 @@ services:
     restart: unless-stopped
 
     volumes:
-      - ./music.ini:/var/www/html/music.ini:ro\n      - ./auth.ini:/var/www/html/auth.ini:ro
+      - ./music.ini:/var/www/html/music.ini:ro
+      - ./auth.ini:/etc/webmusic/auth.ini:ro
       - ./data/music.pls:/var/www/html/music.pls
       - ./data/chart-data:/var/www/html/chart-data
       - ./data/chart-exports:/var/www/html/chart-exports
