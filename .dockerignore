@@ -1,6 +1,7 @@
 data/
 library/
 music.ini
+auth.ini
 .git/
 .github/
 .vscode/
