@@ -399,3 +399,11 @@ Original project credits:
 - Album-art placeholder based on a [design by CmdRobot](http://fav.me/d7kpm65).
 
 The repository includes the **GNU Affero General Public License v3.0**; see [LICENSE](LICENSE). Existing screenshot files show the upstream interface and do not represent all of this fork's layout changes.
+
+## Server deployment
+
+For the Docker deployment on `kurashev.com/music/`, keep deployment-only files on the server. In particular, create `auth.ini` from `auth.example.ini` and do not commit it to Git.
+
+The container reads `auth.ini` at startup and generates an Apache Basic Authentication password file using bcrypt. Apache protects the whole WebMusic document root, including the HTML, JavaScript, CSS, PHP endpoints, and audio responses. The password file is generated inside the container and is not stored in the repository.
+
+The music library is mounted at `/var/www/html/library` from the host's `/srv/webmusic/library`, which is backed by the S3-compatible `kurashev-music` bucket through rclone.
