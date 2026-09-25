@@ -6,6 +6,9 @@ This project extends [Music Folder Player by ltGuillaume](https://codeberg.org/l
 
 [Installation](#installation) · [Using-my-chart](#using-my-chart) · [Configuration](#configuration) · [Data-and-backups](#data-and-backups) · [Troubleshooting](#troubleshooting) · [Development](#development)
 
+<img width="1270" height="1026" alt="{ECAD778D-21FC-4070-9A8E-C918AE731584}" src="https://github.com/user-attachments/assets/a92e25cc-c02e-49de-90dd-5ece32ed4971" />
+
+
 ## Features
 
 - **One music library:** search by filename/path, filter by playlist, reload the folder, and add individual tracks or the entire filtered result to the queue.
