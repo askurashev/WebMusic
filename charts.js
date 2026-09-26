@@ -254,9 +254,10 @@
         host.style.setProperty('--workspace-height', height + 'px');
     }
     async function api(action, body) {
-        const response = await fetch(`charts.php?action=${action}`, body === undefined ? { cache: 'no-store' } : {
+        const makeRequest = () => fetch(`charts.php?action=${action}`, body === undefined ? { cache: 'no-store' } : {
             method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Chart-Token': token }, body: JSON.stringify(body)
         });
+        const response = await fetchWithRetry(makeRequest, action === 'metadata' ? 4 : 1);
         let result;
         try { result = await response.json(); } catch (_) {
             throw new Error(window.location?.protocol === 'file:'
@@ -266,25 +267,47 @@
         if (!response.ok || result.error) throw new Error(result.error || 'Ошибка сервера.');
         return result;
     }
+    async function fetchWithRetry(makeRequest, attempts = 4) {
+        for (let attempt = 0; ; attempt++) {
+            let response;
+            try { response = await makeRequest(); }
+            catch (error) {
+                if (attempt + 1 >= attempts) throw error;
+                await new Promise(resolve => setTimeout(resolve, 500 * (2 ** attempt)));
+                continue;
+            }
+            if (![502, 503, 504].includes(response.status) || attempt + 1 >= attempts) return response;
+            try { await response.body?.cancel(); } catch (_) {}
+            await new Promise(resolve => setTimeout(resolve, 500 * (2 ** attempt)));
+        }
+    }
     async function uploadSelectedFiles(files) {
         if (!files.length || uploadBusy || !uploadsEnabled) return;
         const tooLarge = files.find(file => file.size > uploadMaxBytes);
         if (tooLarge) { status(`Файл «${tooLarge.name}» превышает лимит ${Math.ceil(uploadMaxBytes / 1048576)} МБ.`, true); return; }
         uploadBusy = true; $('upload-library').disabled = true;
-        const uploaded = [], skipped = [];
+        const uploaded = [], skipped = [], failed = [];
         try {
             for (let i = 0; i < files.length; i++) {
                 status(`Загрузка ${i + 1} из ${files.length}: ${files[i].name}`, false, true);
-                const form = new FormData(); form.append('audio[]', files[i], files[i].name);
-                const response = await fetch('charts.php?action=upload', { method: 'POST', headers: { 'X-Chart-Token': token }, body: form, cache: 'no-store' });
-                let result;
-                try { result = await response.json(); } catch (_) { throw new Error(`Сервер вернул некорректный ответ при загрузке «${files[i].name}».`); }
-                if (!response.ok || result.error) throw new Error(result.error || `Не удалось загрузить «${files[i].name}».`);
-                uploaded.push(...(result.uploaded || []));
-                skipped.push(...(result.skipped || []));
+                try {
+                    const response = await fetchWithRetry(() => {
+                        const form = new FormData(); form.append('audio[]', files[i], files[i].name);
+                        return fetch('charts.php?action=upload', { method: 'POST', headers: { 'X-Chart-Token': token }, body: form, cache: 'no-store' });
+                    });
+                    let result;
+                    try { result = await response.json(); } catch (_) { throw new Error(`Сервер вернул некорректный ответ при загрузке «${files[i].name}».`); }
+                    if (!response.ok || result.error) throw new Error(result.error || `Не удалось загрузить «${files[i].name}».`);
+                    uploaded.push(...(result.uploaded || []));
+                    skipped.push(...(result.skipped || []));
+                } catch (error) { failed.push({ name: files[i].name, message: error.message }); }
             }
             await refreshLibrary();
-            status(`Загружено файлов: ${uploaded.length}; пропущено с совпадающим именем: ${skipped.length}.`);
+            const summary = `Загружено файлов: ${uploaded.length}; пропущено с совпадающим именем: ${skipped.length}; ошибок: ${failed.length}.`;
+            if (failed.length) {
+                const names = failed.slice(0, 10).map(file => file.name).join(', ');
+                status(`${summary} Не удалось загрузить: ${names}${failed.length > 10 ? ` и ещё ${failed.length - 10}` : ''}.`, true);
+            } else status(summary);
         } catch (error) { status(error.message, true); }
         finally { uploadBusy = false; $('upload-library').disabled = false; }
     }
