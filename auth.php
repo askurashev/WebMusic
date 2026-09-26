@@ -5,7 +5,7 @@ declare(strict_types=1);
 function requireWebMusicAuth(): void
 {
 	$config = [];
-	$configFile = __DIR__ . '/auth.ini';
+	$configFile = is_file('/etc/webmusic/auth.ini') ? '/etc/webmusic/auth.ini' : __DIR__ . '/auth.ini';
 	if (is_file($configFile)) {
 		$parsed = parse_ini_file($configFile, false, INI_SCANNER_RAW);
 		if (is_array($parsed)) $config = $parsed;
