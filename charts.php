@@ -9,6 +9,7 @@ header('X-Content-Type-Options: nosniff');
 const CHART_HEADER = "<?php exit; ?>\n";
 require_once __DIR__ . '/music.playlists.php';
 require_once __DIR__ . '/music.metadata.php';
+require_once __DIR__ . '/auth.php';
 
 function fail(string $message, int $status = 400): void {
     http_response_code($status);
@@ -143,6 +144,7 @@ try {
     $cfg = $ini['server'];
     $cfg['extensions'] = array_map('strtolower', explode(',', $cfg['ext_songs']));
     $action = $_GET['action'] ?? 'state';
+    if ($action === 'audio') requireWebMusicAuth();
     // Stream by validated library path; also supports libraries outside the web root.
     if ($action === 'audio') {
         $file = songFile((string)($_GET['path'] ?? ''), $cfg);

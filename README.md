@@ -43,7 +43,7 @@ Recognized audio extensions are configurable. The default list is `mp3, flac, og
 3. Create a `library` directory in the project root and place your music inside it. Subfolders are supported.
 4. Copy `auth.example.ini` to `auth.ini` and set a private password.
 5. Double-click `start.cmd`.
-6. The launcher opens **http://127.0.0.1:8765/music.htm**; the browser asks for the credentials in `auth.ini`.
+6. The launcher opens **http://127.0.0.1:8765/music.htm**. The interface and lists open without a password; the browser asks for the credentials when you play or download music.
 
 Example local layout:
 
@@ -86,9 +86,9 @@ For a portable Windows installation, use PowerShell:
 
 ### Existing PHP web server
 
-Place the application in a PHP-enabled document root and configure HTTP Basic authentication in the web server for the entire application directory, including static files and music. For PHP's built-in server, use `router.php` as shown above. The PHP process must be able to read the library and create/write `music.pls`, `chart-data`, and `chart-exports`. You can create those directories beforehand and grant access to the server's user.
+Place the application in a PHP-enabled document root. Configure HTTP Basic authentication for audio files in `/library` and keep the PHP media endpoints protected as described below. For PHP's built-in server, use `router.php` as shown above. The PHP process must be able to read the library and create/write `music.pls`, `chart-data`, and `chart-exports`. You can create those directories beforehand and grant access to the server's user.
 
-The launcher and built-in-server instructions use HTTP Basic authentication, protecting the page, APIs, and static media. `auth.ini` (ignored by Git) supplies `username` and `password`; alternatively set `WEBMUSIC_USERNAME` and `WEBMUSIC_PASSWORD`. The player's password lock is a separate UI control. For public hosting, use HTTPS so credentials are encrypted in transit and configure equivalent authentication in the web server for all files. Static hosting such as GitHub Pages cannot run its PHP backend.
+The launcher and built-in-server instructions use HTTP Basic authentication only for playback streams and music downloads. The page, lists, chart data, and other interface APIs are public. `auth.ini` (ignored by Git) supplies `username` and `password`; alternatively set `WEBMUSIC_USERNAME` and `WEBMUSIC_PASSWORD`. PHP protects the player and chart audio streams and downloads, and the development router also protects direct audio URLs under `library`. For Apache, apply the equivalent rule to audio files in `/library` and retain the checks in `music.php` and `charts.php`. The player's password lock is a separate UI control. Use HTTPS for public hosting so credentials are encrypted in transit. Static hosting such as GitHub Pages cannot run its PHP backend.
 
 ## Using the library and player
 
@@ -96,7 +96,7 @@ The library and weekly chart sit above the bottom player. Their height adapts to
 
 MP3 titles and artists are read from supported embedded ID3 tags. Empty or unsupported tags fall back to filenames (and the player's configurable `pathexp` naming pattern). Search also includes the artist and album artist.
 
-The library opens before reading embedded tags. Tags load progressively in authenticated batches of at most 25 files, with a one-second processing budget between files per request, so large libraries do not exceed PHP's request timeout. A failed tag batch leaves the library usable with filename labels.
+The library opens before reading embedded tags. Tags load progressively in public batches of at most 25 files, with a one-second processing budget between files per request, so large libraries do not exceed PHP's request timeout. A failed tag batch leaves the library usable with filename labels.
 
 Use the pencil button beside an MP3 in the library to edit **artist, album artist, and song title**. Save writes into the MP3 itself without re-encoding audio or renaming the file; playlists and chart history keep their existing paths. The PHP `iconv` extension and write permission to both the file and its folder are required. No additional runtime or package installation is needed.
 
@@ -404,6 +404,6 @@ The repository includes the **GNU Affero General Public License v3.0**; see [LIC
 
 For the Docker deployment on `kurashev.com/music/`, keep deployment-only files on the server. In particular, create `auth.ini` from `auth.example.ini` and do not commit it to Git.
 
-The container reads `auth.ini` at startup and generates an Apache Basic Authentication password file using bcrypt. Apache protects the whole WebMusic document root, including the HTML, JavaScript, CSS, PHP endpoints, and audio responses. The password file is generated inside the container and is not stored in the repository.
+The container reads `auth.ini` at startup and generates an Apache Basic Authentication password file using bcrypt. Apache protects direct audio files under `/library`; the PHP endpoints require credentials for audio streaming and downloads. The page, lists, chart data, and other interface APIs are public. The password file is generated inside the container and is not stored in the repository.
 
 The music library is mounted at `/var/www/html/library` from the host's `/srv/webmusic/library`, which is backed by the S3-compatible `kurashev-music` bucket through rclone.

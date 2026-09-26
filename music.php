@@ -1,4 +1,6 @@
 <?php
+	require_once __DIR__ . '/auth.php';
+	if (isset($_GET['dl']) || isset($_GET['dlpl'])) requireWebMusicAuth();
 	error_reporting(0);
 
 	header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');

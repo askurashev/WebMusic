@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/** Enforce HTTP Basic authentication before serving any application resource. */
+/** Enforce HTTP Basic authentication for protected media and downloads. */
 function requireWebMusicAuth(): void
 {
 	$config = [];
