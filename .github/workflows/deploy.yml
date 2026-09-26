@@ -18,8 +18,17 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v4
 
+      - name: Install rsync on server
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ vars.SERVER_HOST }}
+          username: ${{ vars.SERVER_USER }}
+          port: ${{ vars.SERVER_SSH_PORT || '22' }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: command -v rsync >/dev/null 2>&1 || (apt-get update && apt-get install -y rsync)
+
       - name: Copy application files to server
-        uses: burnett01/rsync-deployments@7.0.2
+        uses: burnett01/rsync-deployments@8.0.5
         with:
           switches: -avzr --exclude='.git/' --exclude='data/' --exclude='library/' --exclude='music.ini' --exclude='auth.ini'
           path: ./
