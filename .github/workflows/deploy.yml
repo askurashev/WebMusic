@@ -45,4 +45,4 @@ jobs:
           username: ${{ vars.SERVER_USER }}
           port: ${{ vars.SERVER_SSH_PORT || '22' }}
           key: ${{ secrets.SERVER_SSH_KEY }}
-          script: cd '${{ vars.DEPLOY_PATH }}' && test -f auth.ini && test -s auth.ini && test -f music.ini && test -s music.ini && mkdir -p data/music.pls data/chart-data data/chart-exports && chown -R 33:33 data/music.pls data/chart-data data/chart-exports && docker compose up -d --build --remove-orphans
+          script: cd '${{ vars.DEPLOY_PATH }}' && test -f auth.ini && test -s auth.ini && test -f music.ini && test -s music.ini && chown root:33 auth.ini && chmod 640 auth.ini && mkdir -p data/music.pls data/chart-data data/chart-exports && chown -R 33:33 data/music.pls data/chart-data data/chart-exports && docker compose up -d --build --remove-orphans
