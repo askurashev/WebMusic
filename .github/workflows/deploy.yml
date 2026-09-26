@@ -1,0 +1,39 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Copy application files to server
+        uses: burnett01/rsync-deployments@7.0.2
+        with:
+          switches: -avzr --exclude='.git/' --exclude='data/' --exclude='library/' --exclude='music.ini' --exclude='auth.ini'
+          path: ./
+          remote_path: ${{ vars.DEPLOY_PATH }}
+          remote_host: ${{ vars.SERVER_HOST }}
+          remote_user: ${{ vars.SERVER_USER }}
+          remote_port: ${{ vars.SERVER_SSH_PORT || '22' }}
+          remote_key: ${{ secrets.SERVER_SSH_KEY }}
+
+      - name: Rebuild and restart application
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ vars.SERVER_HOST }}
+          username: ${{ vars.SERVER_USER }}
+          port: ${{ vars.SERVER_SSH_PORT || '22' }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: cd '${{ vars.DEPLOY_PATH }}' && docker compose up -d --build --remove-orphans

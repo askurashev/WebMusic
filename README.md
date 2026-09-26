@@ -258,9 +258,13 @@ uploads = 1
 upload_max_bytes = 104857600
 ```
 
-Use the platform's actual mount path. The app's playlists, chart history, and chart exports remain on the server's local disk. Keep `chart-exports` outside the mounted library. With `uploads = 1`, the library header shows an upload button. It accepts up to 20 audio files per selection, stores them at the library root, and refuses to overwrite an existing filename. The per-file limit is configured by `upload_max_bytes`; PHP's `upload_max_filesize` and `post_max_size` must be at least as large. The mount must permit writes. S3 filesystem mounts can transfer complete files and depend on local cache space and mount write semantics; keep a backup of the bucket. The MP3 tag editor also writes files and may trigger full-file transfers.
+Use the platform's actual mount path. The app's playlists, chart history, and chart exports remain on the server's local disk. Keep `chart-exports` outside the mounted library. With `uploads = 1`, the library header shows an upload button. It accepts any number of audio files per selection, stores them at the library root, and skips files whose names already exist. The per-file limit is configured by `upload_max_bytes`; PHP's `upload_max_filesize` and `post_max_size` must allow each file. The mount must permit writes. S3 filesystem mounts can transfer complete files and depend on local cache space and mount write semantics; keep a backup of the bucket. The MP3 tag editor also writes files and may trigger full-file transfers.
 
 For local development, leave `root = library` in the ignored local `music.ini` (or omit the override); no mount or S3 credentials are needed. Do not commit a server-specific `music.ini`.
+
+### Automatic deployment
+
+The GitHub Actions workflow deploys every push to `main` over SSH. In repository **Settings → Secrets and variables → Actions**, configure variables `SERVER_HOST`, `SERVER_USER`, and `DEPLOY_PATH` (the directory containing `docker-compose.yml`, for example `/srv/webmusic`); optionally set `SERVER_SSH_PORT` (defaults to `22`). Add the private deploy key as secret `SERVER_SSH_KEY`. The matching public key must be authorized for that account, which needs permission to write the deployment directory and run Docker Compose. Keep server-only files and persistent directories in place: the workflow excludes `data/`, `library/`, `music.ini`, and `auth.ini` while syncing application source, then runs `docker compose up -d --build` remotely.
 
 If you choose custom library or playlist directories inside the repository, add those paths to `.gitignore` too. Git does not read these settings to discover private directories.
 

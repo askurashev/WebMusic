@@ -215,7 +215,8 @@ try {
         $uploaded = [];
         $files = $_FILES['audio'];
         $count = is_array($files['name'] ?? null) ? count($files['name']) : 0;
-        if ($count < 1 || $count > 20) fail('За один раз можно загрузить от 1 до 20 файлов.');
+        if ($count < 1) fail('Выберите аудиофайл для загрузки.');
+        $skipped = [];
         for ($i = 0; $i < $count; $i++) {
             $error = (int)($files['error'][$i] ?? UPLOAD_ERR_NO_FILE);
             if ($error !== UPLOAD_ERR_OK) {
@@ -230,11 +231,11 @@ try {
             $extension = strtolower(pathinfo($name, PATHINFO_EXTENSION));
             if (!in_array($extension, $cfg['extensions'], true)) fail('Формат файла не входит в список ext_songs: ' . $name);
             $destination = $root . DIRECTORY_SEPARATOR . $name;
-            if (file_exists($destination) || is_link($destination)) fail('Файл с таким именем уже существует: ' . $name, 409);
+            if (file_exists($destination) || is_link($destination)) { $skipped[] = $name; continue; }
             if (!move_uploaded_file($tmp, $destination)) fail('Не удалось сохранить файл в библиотеку. Проверьте права записи и подключение хранилища.', 500);
             $uploaded[] = $name;
         }
-        echo jsonText(['uploaded' => $uploaded]);
+        echo jsonText(['uploaded' => $uploaded, 'skipped' => $skipped]);
         exit;
     }
     if ($action === 'metadata') {

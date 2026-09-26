@@ -268,10 +268,10 @@
     }
     async function uploadSelectedFiles(files) {
         if (!files.length || uploadBusy || !uploadsEnabled) return;
-        if (files.length > 20) { status('За один раз можно загрузить не более 20 файлов.', true); return; }
         const tooLarge = files.find(file => file.size > uploadMaxBytes);
         if (tooLarge) { status(`Файл «${tooLarge.name}» превышает лимит ${Math.ceil(uploadMaxBytes / 1048576)} МБ.`, true); return; }
         uploadBusy = true; $('upload-library').disabled = true;
+        const uploaded = [], skipped = [];
         try {
             for (let i = 0; i < files.length; i++) {
                 status(`Загрузка ${i + 1} из ${files.length}: ${files[i].name}`, false, true);
@@ -280,9 +280,11 @@
                 let result;
                 try { result = await response.json(); } catch (_) { throw new Error(`Сервер вернул некорректный ответ при загрузке «${files[i].name}».`); }
                 if (!response.ok || result.error) throw new Error(result.error || `Не удалось загрузить «${files[i].name}».`);
+                uploaded.push(...(result.uploaded || []));
+                skipped.push(...(result.skipped || []));
             }
             await refreshLibrary();
-            status(`Загружено файлов: ${files.length}.`);
+            status(`Загружено файлов: ${uploaded.length}; пропущено с совпадающим именем: ${skipped.length}.`);
         } catch (error) { status(error.message, true); }
         finally { uploadBusy = false; $('upload-library').disabled = false; }
     }
