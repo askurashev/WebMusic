@@ -9,6 +9,7 @@ RUN printf '%s\n' 'DirectoryIndex music.htm' > /etc/apache2/conf-available/webmu
     && a2enmod auth_basic authn_file authz_user
 
 COPY . /var/www/html/
+COPY docker/php-upload.ini /usr/local/etc/php/conf.d/zzz-webmusic-upload.ini
 COPY docker/webmusic-auth.conf /etc/apache2/conf-available/webmusic-auth.conf
 COPY docker/webmusic-entrypoint.sh /usr/local/bin/webmusic-entrypoint.sh
 

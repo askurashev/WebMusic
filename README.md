@@ -234,7 +234,7 @@ Client values are emitted as JavaScript expressions: use **single quotes around 
 | `ext_images` | `jpg,png` | Comma-separated cover image extensions. |
 | `ext_songs` | See Requirements | Comma-separated recognized audio extensions, without leading dots. |
 | `uploads` | `0` | Set to `1` to show authenticated audio uploads in the library. The library directory must be writable. |
-| `upload_max_bytes` | `104857600` | Maximum size per uploaded file in bytes (100 MiB by default); PHP's `upload_max_filesize` and `post_max_size` must allow at least this much. |
+| `upload_max_bytes` | `104857600` | Maximum size per uploaded file in bytes (100 MiB by default); PHP's `upload_max_filesize` and `post_max_size` must allow at least this much. The Docker image sets these PHP limits to 256 MiB and 260 MiB respectively. |
 
 `root` may also be an absolute path. This lets the same application use an S3-compatible bucket mounted as a directory on a server, while local installs continue using `library` unchanged. The application accesses the mount through normal filesystem operations; it does not connect to the S3 API directly.
 
